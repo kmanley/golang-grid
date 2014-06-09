@@ -11,21 +11,23 @@ type Context map[string]string
 type JobID int // TODO: guid
 
 type JobControl struct {
-	MaxConcurrency            uint32
-	StartTime                 time.Time
-	ContinueJobOnTaskError    bool
-	RemoteCurDir              string
-	WorkerNameRegex           string
-	CompiledWorkerNameRegex   *regexp.Regexp
-	ProcessPriority           int
-	AssignSingleTaskPerWorker bool
-	TaskWorkerAssignment      map[string][]uint32
-	JobPriority               int8
-	JobTimeout                uint32
-	TaskTimeout               uint32
-	TaskSeemsHungTimeout      uint32
-	AbandonedJobTimeout       uint32
-	MaxTaskReallocations      uint8
+	MaxConcurrency          uint32
+	StartTime               time.Time
+	ContinueJobOnTaskError  bool
+	RemoteCurDir            string
+	WorkerNameRegex         string
+	CompiledWorkerNameRegex *regexp.Regexp
+	// TODO: consider OSRegex as well, to limit to Workers matching a particular OS/version
+	ProcessPriority int
+	// TODO: later
+	//AssignSingleTaskPerWorker bool
+	//TaskWorkerAssignment      map[string][]uint32
+	JobPriority          int8
+	JobTimeout           uint32
+	TaskTimeout          uint32
+	TaskSeemsHungTimeout uint32
+	AbandonedJobTimeout  uint32
+	MaxTaskReallocations uint8
 }
 
 type JobDefinition struct {
@@ -52,11 +54,11 @@ type Job struct {
 	Finished       time.Time
 	LastCheck      time.Time
 	IdleTasks      TaskList
-	RunningTasks   TaskList
-	CompletedTasks TaskList
+	RunningTasks   TaskMap
+	CompletedTasks TaskMap
 	HeapIndex      int
 }
 
-func NewJob() *Job {
-	return &Job{}
-}
+//func NewJob() *Job {
+//	return &Job{}
+//}
