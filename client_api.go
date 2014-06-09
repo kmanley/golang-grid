@@ -1,12 +1,13 @@
 package grid
 
 import (
-	"fmt"
+	_ "fmt"
 )
 
-type ClientApi struct{}
+type ClientApi struct {
+}
 
-func (this *ClientApi) CreateJob(jobDef JobDefinition, id *JobID) error {
-	fmt.Println("created job", jobDef)
-	return nil
+func (this *ClientApi) CreateJob(jobDef JobDefinition, jobID *JobID) (err error) {
+	*jobID, err = InsertJob(jobDef)
+	return err
 }

@@ -16,6 +16,7 @@ func server() {
 	}
 	for {
 		c, err := ln.Accept()
+		fmt.Println("got Accept") // TODO:
 		if err != nil {
 			continue
 		}

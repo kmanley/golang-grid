@@ -6,16 +6,16 @@ import (
 )
 
 type Task struct {
-	job             JobID
-	seq             uint32
-	indata          interface{}
-	outdata         interface{}
-	started         time.Time
-	finished        time.Time
-	worker          string
-	excludedWorkers map[string]bool
-	stdout          string
-	stderr          string
+	//job             JobID
+	Seq             uint32
+	Indata          interface{}
+	Outdata         interface{}
+	Started         time.Time
+	Finished        time.Time
+	Worker          string
+	ExcludedWorkers map[string]bool
+	Stdout          string
+	Stderr          string
 }
 
 type TaskList []*Task

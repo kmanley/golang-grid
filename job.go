@@ -1,7 +1,7 @@
 package grid
 
 import (
-	_ "fmt"
+	"fmt"
 	"regexp"
 	"time"
 )
@@ -16,11 +16,11 @@ type JobControl struct {
 	ContinueJobOnTaskError    bool
 	RemoteCurDir              string
 	WorkerNameRegex           string
-	workerNameRegex           regexp.Regexp
+	CompiledWorkerNameRegex   *regexp.Regexp
 	ProcessPriority           int
 	AssignSingleTaskPerWorker bool
 	TaskWorkerAssignment      map[string][]uint32
-	JobPriority               uint8
+	JobPriority               int8
 	JobTimeout                uint32
 	TaskTimeout               uint32
 	TaskSeemsHungTimeout      uint32
@@ -30,24 +30,31 @@ type JobControl struct {
 
 type JobDefinition struct {
 	Cmd         string
+	Data        interface{}
 	Description string
-	Control     *JobControl
-	Context     *Context
+	Ctx         *Context
+	Ctrl        *JobControl
+}
+
+func (this *JobDefinition) String() string {
+	return fmt.Sprintf("%s, %v, %s", this.Cmd, this.Data, this.Description) + fmt.Sprintf("%+v", *this.Ctx) +
+		fmt.Sprintf("%+v", *this.Ctrl)
 }
 
 type Job struct {
-	id             JobID
-	cmd            string
-	description    string
-	control        JobControl
-	context        Context
-	created        time.Time
-	started        time.Time
-	finished       time.Time
-	lastCheck      time.Time
-	idleTasks      TaskList
-	runningTasks   TaskList
-	completedTasks TaskList
+	ID             JobID
+	Cmd            string
+	Description    string
+	Ctrl           JobControl
+	Ctx            Context
+	Created        time.Time
+	Started        time.Time
+	Finished       time.Time
+	LastCheck      time.Time
+	IdleTasks      TaskList
+	RunningTasks   TaskList
+	CompletedTasks TaskList
+	HeapIndex      int
 }
 
 func NewJob() *Job {
