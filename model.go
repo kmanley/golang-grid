@@ -43,7 +43,7 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 	newJob.RunningTasks = make(TaskMap)
 	newJob.CompletedTasks = make(TaskMap)
 	for i, taskData := range data {
-		newJob.IdleTasks[i] = &Task{Seq: i, Indata: taskData}
+		newJob.IdleTasks[i] = &Task{Job: jobID, Seq: i, Indata: taskData}
 	}
 
 	Model.Mutex.Lock()
@@ -140,6 +140,10 @@ func GetTaskForWorker(workerName string) (task *Task) {
 	task.Worker = workerName
 	worker.CurrJob = job.ID
 	worker.CurrTask = task.Seq
+	if job.Started.IsZero() {
+		job.Started = now
+	}
+	job.Status = JOB_WORKING
 	return
 }
 
@@ -152,6 +156,7 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 	worker := getWorker(workerName)
 	if worker.CurrJob != jobID || worker.CurrTask != taskSeq {
 		// TODO: our data is the truth, so log & reject
+		fmt.Println("worker out of sync", jobID, taskSeq, worker.CurrJob, worker.CurrTask)
 		return ERR_WORKER_OUT_OF_SYNC
 	}
 
@@ -177,6 +182,11 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 	// is Job complete?
 	if len(job.IdleTasks) == 0 && len(job.RunningTasks) == 0 {
 		job.Finished = now
+		if job.NumErrors > 0 {
+			job.Status = JOB_DONE_ERR
+		} else {
+			job.Status = JOB_DONE_OK
+		}
 	}
 	return nil
 }
@@ -186,7 +196,11 @@ func PrintStats() {
 	defer Model.Mutex.Unlock()
 	fmt.Println(len(Model.JobMap), "job(s)")
 	for jobID, job := range Model.JobMap {
-		fmt.Println("job", jobID, "started:", job.Started, "idle:", len(job.IdleTasks),
+		started := job.Started.Format(time.RubyDate)
+		if job.Started.IsZero() {
+			started = "N/A"
+		}
+		fmt.Println("job", jobID, job.State(), "started:", started, "idle:", len(job.IdleTasks),
 			"running:", len(job.RunningTasks), "done:", len(job.CompletedTasks))
 	}
 }

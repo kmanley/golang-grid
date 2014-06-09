@@ -43,12 +43,22 @@ func (this *JobDefinition) String() string {
 		fmt.Sprintf("%+v", *this.Ctrl)
 }
 
+const (
+	JOB_IDLE = iota
+	JOB_WORKING
+	JOB_SUSPENDED
+	JOB_CANCELLED
+	JOB_DONE_OK
+	JOB_DONE_ERR
+)
+
 type Job struct {
 	ID             JobID
 	Cmd            string
 	Description    string
 	Ctrl           JobControl
 	Ctx            Context
+	Status         int
 	Created        time.Time
 	Started        time.Time
 	Finished       time.Time
@@ -57,8 +67,26 @@ type Job struct {
 	RunningTasks   TaskMap
 	CompletedTasks TaskMap
 	HeapIndex      int
+	NumErrors      int
 }
 
 //func NewJob() *Job {
 //	return &Job{}
 //}
+
+func (this *Job) State() string {
+	switch this.Status {
+	default:
+		return "idle"
+	case JOB_WORKING:
+		return "working"
+	case JOB_SUSPENDED:
+		return "suspended"
+	case JOB_CANCELLED:
+		return "cancelled"
+	case JOB_DONE_OK:
+		return "done-ok"
+	case JOB_DONE_ERR:
+		return "done-err"
+	}
+}
