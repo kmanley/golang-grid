@@ -1,20 +1,19 @@
-package main
+package grid
 
 import (
 	"container/heap"
 	"fmt"
-	"github.com/kmanley/golang-grid"
 	"testing"
 	"time"
 )
 
 func TestJobHeap(t *testing.T) {
-	jobs := &grid.JobHeap{}
+	jobs := &JobHeap{}
 	heap.Init(jobs)
 
-	job1 := grid.Job{Description: "job 1", Created: time.Now()}
-	job2 := grid.Job{Description: "job 2", Created: time.Now()} //, Ctrl: grid.JobControl{JobPriority: 100}}
-	job3 := grid.Job{Description: "job 3", Created: time.Now()} //, Ctrl: grid.JobControl{JobPriority: 104}}
+	job1 := Job{Description: "job 1", Created: time.Now()}
+	job2 := Job{Description: "job 2", Created: time.Now()} //, Ctrl: JobControl{JobPriority: 100}}
+	job3 := Job{Description: "job 3", Created: time.Now()} //, Ctrl: JobControl{JobPriority: 104}}
 
 	heap.Push(jobs, &job2)
 	heap.Push(jobs, &job3)
@@ -39,10 +38,10 @@ func TestJobHeap(t *testing.T) {
 }
 
 func TestCopy(t *testing.T) {
-	job1 := grid.Job{Description: "job 1", Created: time.Now()}
-	job2 := grid.Job{Description: "job 2", Created: time.Now()} //, Ctrl: grid.JobControl{JobPriority: 100}}
-	job3 := grid.Job{Description: "job 3", Created: time.Now()} //, Ctrl: grid.JobControl{JobPriority: 104}}
-	jobs := &grid.JobHeap{}
+	job1 := Job{Description: "job 1", Created: time.Now()}
+	job2 := Job{Description: "job 2", Created: time.Now()} //, Ctrl: JobControl{JobPriority: 100}}
+	job3 := Job{Description: "job 3", Created: time.Now()} //, Ctrl: JobControl{JobPriority: 104}}
+	jobs := &JobHeap{}
 	heap.Init(jobs)
 	heap.Push(jobs, &job1)
 	heap.Push(jobs, &job2)

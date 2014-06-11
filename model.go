@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -26,17 +27,41 @@ func init() {
 
 var Model = &model{}
 var prng = rand.New(rand.NewSource(time.Now().Unix()))
+var lastJobID JobID
+
+const JOBID_FORMAT = "060102150405.999999"
+
+func newJobID() (newID JobID) {
+	for {
+		now := time.Now()
+		newID = JobID(strings.Replace(now.UTC().Format(JOBID_FORMAT), ".", "", 1))
+		for len(newID) < len(JOBID_FORMAT)-1 {
+			newID = newID + "0"
+		}
+		// this is a safeguard when creating jobs quickly in a loop, to ensure IDs are
+		// still unique even if clock resolution is too low to always provide a unique
+		// value for the format string
+		if newID != lastJobID {
+			break
+		} else {
+			fmt.Println("*** paused creating new job ID; clock resolution lower than expected") // TODO: log warning
+		}
+	}
+	lastJobID = newID
+	return newID
+}
 
 func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 	// TODO: handle AssignSingleTaskPerWorker
 	jobDef.Ctrl.CompiledWorkerNameRegex, err = regexp.Compile(jobDef.Ctrl.WorkerNameRegex)
 	if err != nil {
-		return 0, err // TODO: wrap error
+		return "", err // TODO: wrap error
 	}
 
-	jobID = JobID(100) // TODO:
+	now := time.Now()
+	jobID = newJobID()
 	newJob := &Job{ID: jobID, Cmd: jobDef.Cmd, Description: jobDef.Description, Ctx: *jobDef.Ctx,
-		Ctrl: *jobDef.Ctrl, Created: time.Now()}
+		Ctrl: *jobDef.Ctrl, Created: now}
 
 	data := (jobDef.Data).([]interface{}) // TODO: use reflection to verify correct time, return err
 	newJob.IdleTasks = make(TaskList, len(data))
@@ -126,7 +151,7 @@ func GetTaskForWorker(workerName string) (task *Task) {
 	defer Model.Mutex.Unlock()
 	now := time.Now()
 	worker := getWorker(workerName)
-	if worker.CurrJob > 0 { // TODO: depends on type of JobID
+	if worker.CurrJob != "" {
 		// TODO: if worker already has a task according to our records, reassign that Task
 	}
 	job := getJobForWorker(workerName)
@@ -195,17 +220,20 @@ func PrintStats() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	fmt.Println(len(Model.JobMap), "job(s)")
-	for jobID, job := range Model.JobMap {
-		started := job.Started.Format(time.RubyDate)
+	jobs := Model.JobHeap.Copy()
+	for jobs.Len() > 0 {
+		// note: this pops in priority + createdtime order
+		job := (heap.Pop(jobs)).(*Job)
+		jobID := job.ID
+		started := job.Started.Format(time.RFC822)
 		if job.Started.IsZero() {
 			started = "N/A"
 		}
-		fmt.Println("job", jobID, job.State(), "started:", started, "idle:", len(job.IdleTasks),
+		fmt.Println("job", jobID, job.Description, job.State(), "started:", started, "idle:", len(job.IdleTasks),
 			"running:", len(job.RunningTasks), "done:", len(job.CompletedTasks))
 	}
 }
 
-/*
 func sanityCheck() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
@@ -226,4 +254,3 @@ func sanityCheck() {
 
 	}
 }
-*/

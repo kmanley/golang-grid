@@ -8,7 +8,7 @@ import (
 
 type Context map[string]string
 
-type JobID int // TODO: guid
+type JobID string
 
 type JobControl struct {
 	MaxConcurrency          uint32
