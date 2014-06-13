@@ -43,26 +43,38 @@ func (this *JobDefinition) String() string {
 		fmt.Sprintf("%+v", *this.Ctrl)
 }
 
+/*
+waiting - len(idletasks)==numtasks
+working - len(runningtasks) > 0 TODO: but need to consider suspended/resumed, e.g. no suspended or resumed >suspended
+suspended - suspended && !resumed TODO: then suspend needs to move from runningtasks->idletasks which will preempt on workers
+canceled - suspended && !resumed && finished TODO: ditto
+done-ok - len(completedtasks)==numtasks and finished and numerrors==0
+done-err -finished and numerrors > 0
+
+*/
 const (
-	JOB_IDLE = iota
+	JOB_WAITING = iota
 	JOB_WORKING
 	JOB_SUSPENDED
-	JOB_CANCELLED
+	JOB_CANCELLED // same as suspended but can't be resumed
 	JOB_DONE_OK
 	JOB_DONE_ERR
 )
 
 type Job struct {
-	ID             JobID
-	Cmd            string
-	Description    string
-	Ctrl           JobControl
-	Ctx            Context
-	Status         int
+	ID          JobID
+	Cmd         string
+	Description string
+	Ctrl        JobControl
+	Ctx         Context
+	//Status         int
 	Created        time.Time
 	Started        time.Time
+	Suspended      time.Time
+	Resumed        time.Time
 	Finished       time.Time
-	LastCheck      time.Time
+	LastClientPoll time.Time
+	NumTasks       int
 	IdleTasks      TaskList
 	RunningTasks   TaskMap
 	CompletedTasks TaskMap
@@ -70,10 +82,24 @@ type Job struct {
 	NumErrors      int
 }
 
+type JobMap map[JobID]*Job
+
 //func NewJob() *Job {
 //	return &Job{}
 //}
 
+func (this *Job) State() int {
+	if len(this.IdleTasks) == 0 && len(this.RunningTasks) == 0 {
+		if this.NumErrors > 0 {
+			return JOB_DONE_ERR
+		} else {
+			return JOB_DONE_OK
+		}
+	}
+
+}
+
+/*
 func (this *Job) State() string {
 	switch this.Status {
 	default:
@@ -90,3 +116,4 @@ func (this *Job) State() string {
 		return "done-err"
 	}
 }
+*/

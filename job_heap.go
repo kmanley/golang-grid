@@ -8,6 +8,11 @@ import (
 // A JobHeap is a heap of Jobs ordered by priority then creation time
 type JobHeap []*Job
 
+//func NewJobHeap(size int) JobHeap {
+//	ret := JobHeap(make([]*Job, size))
+//	return ret
+//}
+
 func (this JobHeap) Len() int { return len(this) }
 
 func (this JobHeap) Less(i, j int) bool {

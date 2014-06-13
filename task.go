@@ -13,6 +13,7 @@ type Task struct {
 	Started  time.Time
 	Finished time.Time
 	Worker   string
+	Error    error
 	// TODO: later
 	//ExcludedWorkers map[string]bool
 	Stdout string

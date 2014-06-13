@@ -37,7 +37,7 @@ func TestJobHeap(t *testing.T) {
 
 }
 
-func TestCopy(t *testing.T) {
+func TestJobHeapCopy(t *testing.T) {
 	job1 := Job{Description: "job 1", Created: time.Now()}
 	job2 := Job{Description: "job 2", Created: time.Now()} //, Ctrl: JobControl{JobPriority: 100}}
 	job3 := Job{Description: "job 3", Created: time.Now()} //, Ctrl: JobControl{JobPriority: 104}}

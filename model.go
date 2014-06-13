@@ -13,19 +13,25 @@ import (
 type model struct {
 	Mutex   sync.Mutex
 	Fifo    bool
-	JobMap  map[JobID]*Job
-	JobHeap JobHeap
+	Jobs    JobHeap
+	JobMap  JobMap
 	Workers WorkerMap
 }
 
-func init() {
+// this is only here to support unit tests
+func resetModel() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	Model.JobMap = make(map[JobID]*Job)
+	Model.JobMap = make(JobMap)
+	Model.Jobs = Model.Jobs[0:0]
 	Model.Workers = make(WorkerMap)
 }
 
-var Model = &model{}
+func init() {
+	resetModel()
+}
+
+var Model = &model{} // TODO: lowercase
 var prng = rand.New(rand.NewSource(time.Now().Unix()))
 var lastJobID JobID
 
@@ -63,8 +69,9 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 	newJob := &Job{ID: jobID, Cmd: jobDef.Cmd, Description: jobDef.Description, Ctx: *jobDef.Ctx,
 		Ctrl: *jobDef.Ctrl, Created: now}
 
-	data := (jobDef.Data).([]interface{}) // TODO: use reflection to verify correct time, return err
-	newJob.IdleTasks = make(TaskList, len(data))
+	data := (jobDef.Data).([]interface{}) // TODO: use reflection to verify correct type, return err
+	newJob.NumTasks = len(data)
+	newJob.IdleTasks = make(TaskList, newJob.NumTasks)
 	newJob.RunningTasks = make(TaskMap)
 	newJob.CompletedTasks = make(TaskMap)
 	for i, taskData := range data {
@@ -74,7 +81,7 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	Model.JobMap[jobID] = newJob
-	heap.Push(&(Model.JobHeap), newJob)
+	heap.Push(&(Model.Jobs), newJob)
 	fmt.Println("created job", newJob.ID)
 	return newJob.ID, nil
 }
@@ -87,21 +94,26 @@ func SetJobPriority(jobID JobID, priority int8) error {
 		return ERR_INVALID_JOB_ID
 	}
 	// update the priority heap
-	Model.JobHeap.ChangePriority(job, priority)
+	Model.Jobs.ChangePriority(job, priority)
 	return nil
 }
 
 // NOTE: caller must hold mutex
 func getJobForWorker(workerName string) (job *Job) {
 	now := time.Now()
-	candidates := make([]*Job, 0, Model.JobHeap.Len())
-	jobs := Model.JobHeap.Copy()
+	candidates := make([]*Job, 0, Model.Jobs.Len())
+	jobs := Model.Jobs.Copy()
 	for jobs.Len() > 0 {
 		// note: this pops in priority + createdtime order
 		job = (heap.Pop(jobs)).(*Job)
 
 		// TODO: consider best order of the following clauses for performance
 		// TODO: add support for hidden workers?
+		if !(job.Status == JOB_WORKING || job.Status == JOB_IDLE) {
+			// job is suspended, cancelled, or done
+			continue
+		}
+
 		if job.Ctrl.StartTime.After(now) {
 			// job not scheduled to start yet
 			continue
@@ -173,7 +185,7 @@ func GetTaskForWorker(workerName string) (task *Task) {
 }
 
 func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{},
-	stdout string, stderr string) error {
+	stdout string, stderr string, taskError error) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	now := time.Now()
@@ -200,13 +212,22 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 	task.Outdata = result
 	task.Stdout = stdout
 	task.Stderr = stderr
+	task.Error = taskError
 
 	delete(job.RunningTasks, taskSeq)
 	job.CompletedTasks[taskSeq] = task
 
+	if task.Error != nil {
+		job.NumErrors += 1
+		if !Job.Ctrl.ContinueJobOnTaskError {
+
+		}
+	}
+
 	// is Job complete?
 	if len(job.IdleTasks) == 0 && len(job.RunningTasks) == 0 {
 		job.Finished = now
+		// TODO: not sure about this NumErrors thing - need to keep it in sync
 		if job.NumErrors > 0 {
 			job.Status = JOB_DONE_ERR
 		} else {
@@ -220,7 +241,7 @@ func PrintStats() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	fmt.Println(len(Model.JobMap), "job(s)")
-	jobs := Model.JobHeap.Copy()
+	jobs := Model.Jobs.Copy()
 	for jobs.Len() > 0 {
 		// note: this pops in priority + createdtime order
 		job := (heap.Pop(jobs)).(*Job)
@@ -237,10 +258,10 @@ func PrintStats() {
 func sanityCheck() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	if len(Model.JobMap) != len(Model.JobHeap) {
-		panic("# of entries in JobMap and JobHeap don't match")
+	if len(Model.JobMap) != Model.Jobs.Len() {
+		panic("# of entries in JobMap and Jobs don't match")
 	}
-	jobs := Model.JobHeap.Copy()
+	jobs := Model.Jobs.Copy()
 	for jobs.Len() > 0 {
 		// note: this pops in priority + createdtime order
 		heapJob := (heap.Pop(jobs)).(*Job)
@@ -251,6 +272,6 @@ func sanityCheck() {
 		if mapJob != heapJob {
 			panic("heap job != map job")
 		}
-
+		// TODO: lots of other checks to do
 	}
 }
