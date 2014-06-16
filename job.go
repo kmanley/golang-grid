@@ -52,6 +52,7 @@ done-ok - len(completedtasks)==numtasks and finished and numerrors==0
 done-err -finished and numerrors > 0
 
 */
+
 const (
 	JOB_WAITING = iota
 	JOB_WORKING
@@ -96,8 +97,11 @@ func (this *Job) State() int {
 			return JOB_DONE_OK
 		}
 	}
+	return JOB_WAITING // TODO:
 
 }
+
+//func (this *Job) allocateTask()
 
 /*
 func (this *Job) State() string {

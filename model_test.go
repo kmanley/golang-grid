@@ -42,11 +42,11 @@ func TestSimple(t *testing.T) {
 
 	//fmt.Println(t1, t2, t3, t4, t5)
 
-	SetTaskDone("worker1", t1.Job, t1.Seq, 20, "", "")
-	SetTaskDone("worker2", t2.Job, t2.Seq, 20, "", "")
-	SetTaskDone("worker3", t3.Job, t3.Seq, 20, "", "")
-	SetTaskDone("worker4", t4.Job, t4.Seq, 20, "", "")
-	SetTaskDone("worker5", t5.Job, t5.Seq, 20, "", "")
+	SetTaskDone("worker1", t1.Job, t1.Seq, 20, "", "", nil)
+	SetTaskDone("worker2", t2.Job, t2.Seq, 20, "", "", nil)
+	SetTaskDone("worker3", t3.Job, t3.Seq, 20, "", "", nil)
+	SetTaskDone("worker4", t4.Job, t4.Seq, 20, "", "", nil)
+	SetTaskDone("worker5", t5.Job, t5.Seq, 20, "", "", nil)
 
 	PrintStats()
 }
