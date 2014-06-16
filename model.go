@@ -109,7 +109,8 @@ func getJobForWorker(workerName string) (job *Job) {
 
 		// TODO: consider best order of the following clauses for performance
 		// TODO: add support for hidden workers?
-		if !(job.Status == JOB_WORKING || job.Status == JOB_IDLE) {
+		state := job.State()
+		if !(state == JOB_WORKING || state == JOB_WAITING) {
 			// job is suspended, cancelled, or done
 			continue
 		}
@@ -180,7 +181,7 @@ func GetTaskForWorker(workerName string) (task *Task) {
 	if job.Started.IsZero() {
 		job.Started = now
 	}
-	job.Status = JOB_WORKING
+	//job.Status = JOB_WORKING
 	return
 }
 
@@ -219,7 +220,7 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 
 	if task.Error != nil {
 		job.NumErrors += 1
-		if !Job.Ctrl.ContinueJobOnTaskError {
+		if !job.Ctrl.ContinueJobOnTaskError {
 
 		}
 	}
@@ -228,11 +229,11 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 	if len(job.IdleTasks) == 0 && len(job.RunningTasks) == 0 {
 		job.Finished = now
 		// TODO: not sure about this NumErrors thing - need to keep it in sync
-		if job.NumErrors > 0 {
-			job.Status = JOB_DONE_ERR
-		} else {
-			job.Status = JOB_DONE_OK
-		}
+		//if job.NumErrors > 0 {
+		//	job.Status = JOB_DONE_ERR
+		//} else {
+		//	job.Status = JOB_DONE_OK
+		//}
 	}
 	return nil
 }
