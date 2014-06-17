@@ -1,3 +1,5 @@
+// TODO: at some point try to lowercase (not export) as much as possible; don't want to do it yet
+// bc not sure of implications for rpc/json serialization
 package grid
 
 import (
@@ -24,6 +26,7 @@ type TaskList []*Task
 type TaskMap map[int]*Task
 
 func NewTask() *Task {
+	// placeholder in case we need more initialization logic later
 	return &Task{}
 }
 

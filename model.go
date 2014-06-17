@@ -37,6 +37,9 @@ var lastJobID JobID
 
 const JOBID_FORMAT = "060102150405.999999"
 
+// TODO: replace with guid? or add distributor ID prefix? the problem with the existing
+// scheme is that there could be dupes in an environment with more than 1 grid
+// OTOH this scheme has a nice time-ordered property
 func newJobID() (newID JobID) {
 	for {
 		now := time.Now()

@@ -85,9 +85,10 @@ type Job struct {
 
 type JobMap map[JobID]*Job
 
-//func NewJob() *Job {
-//	return &Job{}
-//}
+func NewJob() *Job {
+	// placeholder in case we need more initialization logic later
+	return &Job{}
+}
 
 func (this *Job) State() int {
 	if len(this.IdleTasks) == 0 && len(this.RunningTasks) == 0 {
