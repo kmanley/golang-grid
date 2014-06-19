@@ -11,12 +11,16 @@ func TestTaskHeap(t *testing.T) {
 	heap.Init(tasks)
 
 	for i := 20; i >= 0; i-- {
-		t := Task{Seq: i}
-		heap.Push(tasks, &t)
+		task := Task{Seq: i}
+		heap.Push(tasks, &task)
 	}
 
 	for i := 0; i <= 20; i++ {
-		fmt.Println(heap.Pop(tasks))
+		task := heap.Pop(tasks).(*Task)
+		if task.Seq != i {
+			t.Fail()
+		}
+		fmt.Println(task)
 	}
 	fmt.Println(tasks.Len())
 }
