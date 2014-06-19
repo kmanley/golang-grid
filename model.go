@@ -74,11 +74,11 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 
 	data := (jobDef.Data).([]interface{}) // TODO: use reflection to verify correct type, return err
 	newJob.NumTasks = len(data)
-	newJob.IdleTasks = make(TaskList, newJob.NumTasks)
+	//newJob.IdleTasks = make(TaskList, newJob.NumTasks)
 	newJob.RunningTasks = make(TaskMap)
 	newJob.CompletedTasks = make(TaskMap)
 	for i, taskData := range data {
-		newJob.IdleTasks[i] = &Task{Job: jobID, Seq: i, Indata: taskData}
+		heap.Push(&(newJob.IdleTasks), &Task{Job: jobID, Seq: i, Indata: taskData})
 	}
 
 	Model.Mutex.Lock()
@@ -122,7 +122,7 @@ func getJobForWorker(workerName string) (job *Job) {
 			// job not scheduled to start yet
 			continue
 		}
-		if len(job.IdleTasks) < 1 {
+		if job.IdleTasks.Len() < 1 {
 			// all tasks are currently being executed
 			continue
 		}
@@ -171,11 +171,10 @@ func GetTaskForWorker(workerName string) (task *Task) {
 		// TODO: if worker already has a task according to our records, reassign that Task
 	}
 	job := getJobForWorker(workerName)
-	if job == nil || len(job.IdleTasks) < 1 {
+	if job == nil || job.IdleTasks.Len() < 1 {
 		return
 	}
-	task = job.IdleTasks[0]
-	job.IdleTasks = job.IdleTasks[1:]
+	task = heap.Pop(&(job.IdleTasks)).(*Task)
 	job.RunningTasks[task.Seq] = task
 	task.Started = now
 	task.Worker = workerName
@@ -229,7 +228,7 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 	}
 
 	// is Job complete?
-	if len(job.IdleTasks) == 0 && len(job.RunningTasks) == 0 {
+	if job.IdleTasks.Len() == 0 && len(job.RunningTasks) == 0 {
 		job.Finished = now
 		// TODO: not sure about this NumErrors thing - need to keep it in sync
 		//if job.NumErrors > 0 {
@@ -254,7 +253,7 @@ func PrintStats() {
 		if job.Started.IsZero() {
 			started = "N/A"
 		}
-		fmt.Println("job", jobID, job.Description, job.State(), "started:", started, "idle:", len(job.IdleTasks),
+		fmt.Println("job", jobID, job.Description, job.State(), "started:", started, "idle:", job.IdleTasks.Len(),
 			"running:", len(job.RunningTasks), "done:", len(job.CompletedTasks))
 	}
 }

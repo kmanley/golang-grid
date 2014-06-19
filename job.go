@@ -76,7 +76,7 @@ type Job struct {
 	Finished       time.Time
 	LastClientPoll time.Time
 	NumTasks       int
-	IdleTasks      TaskList
+	IdleTasks      TaskHeap
 	RunningTasks   TaskMap
 	CompletedTasks TaskMap
 	HeapIndex      int
