@@ -25,25 +25,29 @@ type Task struct {
 type TaskList []*Task
 type TaskMap map[int]*Task
 
-func NewTask() *Task {
+func NewTask(jobID JobID, seq int, data interface{}) *Task {
 	// placeholder in case we need more initialization logic later
-	return &Task{}
+	return &Task{Job: jobID, Seq: seq, Indata: data}
 }
 
-type WorkerStats struct {
-	Version   float32
-	OSVersion string
-	CurrDisk  uint64
-	CurrMem   uint64
-	CurrCpu   uint8
+func (this *Task) start(worker *Worker) {
+	now := time.Now()
+	this.Outdata = nil
+	this.Started = now
+	this.Finished = *new(time.Time)
+	this.Worker = worker.Name
+	this.Error = nil
+	this.Stdout = ""
+	this.Stderr = ""
+	worker.assignTask(this)
 }
 
-type Worker struct {
-	Name        string
-	CurrJob     JobID
-	CurrTask    int
-	Stats       WorkerStats
-	LastContact time.Time
+func (this *Task) finish(result interface{}, stdout string, stderr string, err error) {
+	now := time.Now()
+	this.Outdata = result
+	this.Finished = now
+	// leave this.Worker alone so there's a record of which worker did the task
+	this.Error = err
+	this.Stdout = stdout
+	this.Stderr = stderr
 }
-
-type WorkerMap map[string]*Worker

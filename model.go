@@ -67,19 +67,9 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 		return "", err // TODO: wrap error
 	}
 
-	now := time.Now()
 	jobID = newJobID()
-	newJob := &Job{ID: jobID, Cmd: jobDef.Cmd, Description: jobDef.Description, Ctx: *jobDef.Ctx,
-		Ctrl: *jobDef.Ctrl, Created: now}
-
-	data := (jobDef.Data).([]interface{}) // TODO: use reflection to verify correct type, return err
-	newJob.NumTasks = len(data)
-	//newJob.IdleTasks = make(TaskList, newJob.NumTasks)
-	newJob.RunningTasks = make(TaskMap)
-	newJob.CompletedTasks = make(TaskMap)
-	for i, taskData := range data {
-		heap.Push(&(newJob.IdleTasks), &Task{Job: jobID, Seq: i, Indata: taskData})
-	}
+	newJob := NewJob(jobID, jobDef.Cmd, jobDef.Description, (jobDef.Data).([]interface{}),
+		jobDef.Ctx, jobDef.Ctrl)
 
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
@@ -113,7 +103,7 @@ func getJobForWorker(workerName string) (job *Job) {
 		// TODO: consider best order of the following clauses for performance
 		// TODO: add support for hidden workers?
 		state := job.State()
-		if !(state == JOB_WORKING || state == JOB_WAITING) {
+		if !(state == JOB_RUNNING || state == JOB_WAITING) {
 			// job is suspended, cancelled, or done
 			continue
 		}
@@ -153,10 +143,10 @@ func getJobForWorker(workerName string) (job *Job) {
 }
 
 // NOTE: caller must hold mutex
-func getWorker(workerName string) *Worker {
+func getOrCreateWorker(workerName string) *Worker {
 	worker, found := Model.Workers[workerName]
 	if !found {
-		worker = &Worker{Name: workerName}
+		worker = NewWorker(workerName)
 		Model.Workers[workerName] = worker
 	}
 	return worker
@@ -165,25 +155,15 @@ func getWorker(workerName string) *Worker {
 func GetTaskForWorker(workerName string) (task *Task) {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	now := time.Now()
-	worker := getWorker(workerName)
-	if worker.CurrJob != "" {
-		// TODO: if worker already has a task according to our records, reassign that Task
+	worker := getOrCreateWorker(workerName)
+	if worker.IsWorking() {
+		// TODO: if worker already has a task according to our records, put that Task back on idle heap
 	}
 	job := getJobForWorker(workerName)
-	if job == nil || job.IdleTasks.Len() < 1 {
+	if job == nil {
 		return
 	}
-	task = heap.Pop(&(job.IdleTasks)).(*Task)
-	job.RunningTasks[task.Seq] = task
-	task.Started = now
-	task.Worker = workerName
-	worker.CurrJob = job.ID
-	worker.CurrTask = task.Seq
-	if job.Started.IsZero() {
-		job.Started = now
-	}
-	//job.Status = JOB_WORKING
+	task = job.allocateTask(worker)
 	return
 }
 
@@ -191,9 +171,8 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 	stdout string, stderr string, taskError error) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	now := time.Now()
 
-	worker := getWorker(workerName)
+	worker := getOrCreateWorker(workerName)
 	if worker.CurrJob != jobID || worker.CurrTask != taskSeq {
 		// TODO: our data is the truth, so log & reject
 		fmt.Println("worker out of sync", jobID, taskSeq, worker.CurrJob, worker.CurrTask)
@@ -206,37 +185,14 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 		return ERR_INVALID_JOB_ID
 	}
 
-	task, found := job.RunningTasks[taskSeq]
-	if !found {
+	task := job.getRunningTask(taskSeq)
+	if task == nil {
 		return ERR_TASK_NOT_RUNNING
 	}
 
-	task.Finished = now
-	task.Outdata = result
-	task.Stdout = stdout
-	task.Stderr = stderr
-	task.Error = taskError
+	// TODO: need to update the worker to mark it as no longer working on this task
+	job.setTaskDone(task, result, stdout, stderr, taskError)
 
-	delete(job.RunningTasks, taskSeq)
-	job.CompletedTasks[taskSeq] = task
-
-	if task.Error != nil {
-		job.NumErrors += 1
-		if !job.Ctrl.ContinueJobOnTaskError {
-
-		}
-	}
-
-	// is Job complete?
-	if job.IdleTasks.Len() == 0 && len(job.RunningTasks) == 0 {
-		job.Finished = now
-		// TODO: not sure about this NumErrors thing - need to keep it in sync
-		//if job.NumErrors > 0 {
-		//	job.Status = JOB_DONE_ERR
-		//} else {
-		//	job.Status = JOB_DONE_OK
-		//}
-	}
 	return nil
 }
 
