@@ -91,6 +91,17 @@ func SetJobPriority(jobID JobID, priority int8) error {
 	return nil
 }
 
+func SuspendJob(jobID JobID, graceful bool) error {
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+	job, exists := Model.JobMap[jobID]
+	if !exists {
+		return ERR_INVALID_JOB_ID
+	}
+	job.suspend(graceful)
+	return nil
+}
+
 // NOTE: caller must hold mutex
 func getJobForWorker(workerName string) (job *Job) {
 	now := time.Now()

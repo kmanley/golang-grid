@@ -42,6 +42,16 @@ func (this *Task) start(worker *Worker) {
 	worker.assignTask(this)
 }
 
+func (this *Task) reset() {
+	this.Outdata = nil
+	this.Started = *new(time.Time)
+	this.Finished = *new(time.Time)
+	this.Worker = ""
+	this.Error = nil
+	this.Stdout = ""
+	this.Stderr = ""
+}
+
 func (this *Task) finish(result interface{}, stdout string, stderr string, err error) {
 	now := time.Now()
 	this.Outdata = result

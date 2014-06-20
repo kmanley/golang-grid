@@ -139,6 +139,19 @@ func (this *Job) setTaskDone(task *Task, result interface{}, stdout string, stde
 	}
 }
 
+func (this *Job) suspend(graceful bool) {
+	now := time.Now()
+	this.Suspended = now
+	// in a graceful suspend, any running tasks are allowed to continue to run
+	// in a graceless suspend, any running tasks will be terminated
+	if !graceful {
+		for _, task := range this.RunningTasks {
+			task.reset()
+			heap.Push(&(this.IdleTasks), task)
+		}
+	}
+}
+
 func (this *Job) State() int {
 	if !this.Cancelled.IsZero() {
 		return JOB_CANCELLED
