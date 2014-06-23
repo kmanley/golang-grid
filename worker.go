@@ -15,6 +15,14 @@ type WorkerStats struct {
 	CurrCpu   uint8
 }
 
+func (this *WorkerStats) reset() {
+	this.Version = 0
+	this.OSVersion = ""
+	this.CurrDisk = 0
+	this.CurrMem = 0
+	this.CurrCpu = 0
+}
+
 type Worker struct {
 	Name     string
 	CurrJob  JobID
@@ -38,4 +46,11 @@ func (this *Worker) assignTask(task *Task) {
 	this.CurrJob = task.Job
 	this.CurrTask = task.Seq
 	this.LastPoll = now
+}
+
+func (this *Worker) reset() {
+	this.CurrJob = ""
+	this.CurrTask = 0
+	// NOTE: we don't reset stats
+	this.LastPoll = *new(time.Time)
 }

@@ -91,6 +91,17 @@ func SetJobPriority(jobID JobID, priority int8) error {
 	return nil
 }
 
+func SetJobMaxConcurrency(jobID JobID, maxcon uint32) error {
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+	job, exists := Model.JobMap[jobID]
+	if !exists {
+		return ERR_INVALID_JOB_ID
+	}
+	job.setMaxConcurrency(maxcon)
+	return nil
+}
+
 func SuspendJob(jobID JobID, graceful bool) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
@@ -148,10 +159,12 @@ func getJobForWorker(workerName string) (job *Job) {
 			// all tasks are currently being executed
 			continue
 		}
-		if (job.Ctrl.MaxConcurrency > 0) && (uint32(len(job.RunningTasks)) >= job.Ctrl.MaxConcurrency) {
+		maxcon := job.getMaxConcurrency()
+		if (maxcon > 0) && (uint32(len(job.RunningTasks)) >= maxcon) {
 			// job is configured with a max concurrency and that has been reached
 			continue
 		}
+		// TODO: don't access Job.Ctrl directly, use accessor functions on Job
 		if (job.Ctrl.CompiledWorkerNameRegex != nil) && (!job.Ctrl.CompiledWorkerNameRegex.MatchString(workerName)) {
 			// job is configured for specific workers and the requesting worker is not a match
 			continue
@@ -184,15 +197,34 @@ func getOrCreateWorker(workerName string) *Worker {
 	return worker
 }
 
+func forgetWorker(workerName string) {
+	delete(Model.Workers, workerName)
+}
+
+func reallocateWorkerTask(worker *Worker) {
+	jobID := worker.CurrJob
+	job, exists := Model.JobMap[jobID]
+	if !exists {
+		// TODO: log a warning
+		return
+	}
+	job.reallocateWorkerTask(worker)
+}
+
 func GetTaskForWorker(workerName string) (task *Task) {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	worker := getOrCreateWorker(workerName)
 	if worker.IsWorking() {
-		// TODO: if worker already has a task according to our records, put that Task back on idle heap
+		// Out of sync; we think this worker already has a task but it is requesting
+		// a new one. Since our view is the truth, we need to reallocate the task we
+		// thought this worker was working on. Note we don't return an error in this
+		// case, we go ahead and allocate a new task
+		reallocateWorkerTask(worker)
 	}
 	job := getJobForWorker(workerName)
 	if job == nil {
+		// no work available right now
 		return
 	}
 	task = job.allocateTask(worker)
@@ -205,26 +237,67 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 	defer Model.Mutex.Unlock()
 
 	worker := getOrCreateWorker(workerName)
-	if worker.CurrJob != jobID || worker.CurrTask != taskSeq {
-		// TODO: our data is the truth, so log & reject
-		fmt.Println("worker out of sync", jobID, taskSeq, worker.CurrJob, worker.CurrTask)
-		return ERR_WORKER_OUT_OF_SYNC
+	if !(worker.CurrJob == jobID && worker.CurrTask == taskSeq) {
+		// Out of sync; the worker is reporting a result for a different job/task to
+		// what we think it's working on. Our view is the truth so we reallocate the
+		// job we thought the worker was working on and reject its result.
+		// TODO: logging
+		reallocateWorkerTask(worker)
+		// Ignore the error; the worker will request a new task and get back in sync
+		return nil
 	}
 
 	job, found := Model.JobMap[jobID]
 	if !found {
-		// TODO: log and reject
-		return ERR_INVALID_JOB_ID
+		// TODO: logging
+		return nil
 	}
 
 	task := job.getRunningTask(taskSeq)
 	if task == nil {
-		return ERR_TASK_NOT_RUNNING
+		// TODO: logging
+		return nil
 	}
 
-	// TODO: need to update the worker to mark it as no longer working on this task
-	job.setTaskDone(task, result, stdout, stderr, taskError)
+	job.setTaskDone(worker, task, result, stdout, stderr, taskError)
 
+	return nil
+}
+
+func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+
+	// TODO: this block is copied from SetTaskDone, refactor
+	worker := getOrCreateWorker(workerName)
+	if !(worker.CurrJob == jobID && worker.CurrTask == taskSeq) {
+		// Out of sync; the worker is asking about a different job/task to
+		// what we think it's working on. Our view is the truth so we reallocate the
+		// job we thought the worker was working on
+		// TODO: what about jobID, taskSeq - do we need to reallocate that too??
+		// TODO: do we really need to store worker.Job, worker.Task? I guess so since we display
+		//          workers and what they're working on
+		// TODO: logging
+		reallocateWorkerTask(worker)
+		// Ignore the error; the worker will request a new task and get back in sync
+		return nil
+	}
+
+	job, found := Model.JobMap[jobID]
+	if !found {
+		// TODO: logging
+		return ERR_INVALID_JOB_ID
+	}
+
+	// state := job.State()
+	// TODO: if state == JOB_CANCELLED || state == JOB_DONE_ERR || state == JOB
+
+	// TODO: need to consider suspended task with graceful vs. graceless param...
+	task := job.getRunningTask(taskSeq)
+	if task == nil {
+		// TODO: logging
+		return ERR_TASK_NOT_RUNNING
+	}
 	return nil
 }
 

@@ -104,6 +104,7 @@ func (this *Job) allocateTask(worker *Worker) *Task {
 	if this.Started.IsZero() {
 		this.Started = now
 	}
+	worker.assignTask(task)
 	return task
 }
 
@@ -115,7 +116,8 @@ func (this *Job) getRunningTask(seq int) *Task {
 	return task
 }
 
-func (this *Job) setTaskDone(task *Task, result interface{}, stdout string, stderr string, err error) {
+func (this *Job) setTaskDone(worker *Worker, task *Task, result interface{},
+	stdout string, stderr string, err error) {
 	now := time.Now()
 	task.finish(result, stdout, stderr, err)
 	this.CompletedTasks[task.Seq] = task
@@ -128,6 +130,7 @@ func (this *Job) setTaskDone(task *Task, result interface{}, stdout string, stde
 	if (len(this.CompletedTasks) == this.NumTasks) || (this.NumErrors > 0 && !this.Ctrl.ContinueJobOnTaskError) {
 		this.Finished = now
 	}
+	worker.reset()
 }
 
 func (this *Job) suspend(graceful bool) {
@@ -139,6 +142,14 @@ func (this *Job) suspend(graceful bool) {
 	}
 }
 
+func (this *Job) getMaxConcurrency() uint32 {
+	return this.Ctrl.MaxConcurrency
+}
+
+func (this *Job) setMaxConcurrency(maxcon uint32) {
+	this.Ctrl.MaxConcurrency = maxcon
+}
+
 func (this *Job) cancel() {
 	this.Cancelled = time.Now()
 	this._stopRunningTasks()
@@ -146,10 +157,28 @@ func (this *Job) cancel() {
 
 func (this *Job) _stopRunningTasks() {
 	for _, task := range this.RunningTasks {
-		task.reset()
-		heap.Push(&(this.IdleTasks), task)
-		delete(this.RunningTasks, task.Seq)
+		this.reallocateRunningTask(task)
 	}
+}
+
+func (this *Job) reallocateRunningTask(task *Task) {
+	task.reset()
+	heap.Push(&(this.IdleTasks), task)
+	delete(this.RunningTasks, task.Seq)
+}
+
+func (this *Job) reallocateCompletedTask(task *Task) {
+	task.reset()
+	heap.Push(&(this.IdleTasks), task)
+	delete(this.CompletedTasks, task.Seq)
+}
+
+func (this *Job) reallocateWorkerTask(worker *Worker) {
+	task, found := this.RunningTasks[worker.CurrTask]
+	if found {
+		this.reallocateRunningTask(task)
+	}
+	worker.reset()
 }
 
 // Retries a failed job, or resumes a suspended job. Any tasks that had previously
@@ -165,11 +194,9 @@ func (this *Job) retry() error {
 	this.Retried = now
 
 	// re-enqueue any failed tasks
-	for seq, task := range this.CompletedTasks {
+	for _, task := range this.CompletedTasks {
 		if task.hasError() {
-			task.reset()
-			heap.Push(&(this.IdleTasks), task)
-			delete(this.CompletedTasks, seq)
+			this.reallocateCompletedTask(task)
 		}
 	}
 
@@ -197,24 +224,3 @@ func (this *Job) State() int {
 	}
 	return JOB_WAITING
 }
-
-//func (this *Job) allocateTask()
-
-/*
-func (this *Job) State() string {
-	switch this.Status {
-	default:
-		return "idle"
-	case JOB_WORKING:
-		return "working"
-	case JOB_SUSPENDED:
-		return "suspended"
-	case JOB_CANCELLED:
-		return "cancelled"
-	case JOB_DONE_OK:
-		return "done-ok"
-	case JOB_DONE_ERR:
-		return "done-err"
-	}
-}
-*/
