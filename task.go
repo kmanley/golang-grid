@@ -61,3 +61,7 @@ func (this *Task) finish(result interface{}, stdout string, stderr string, err e
 	this.Stdout = stdout
 	this.Stderr = stderr
 }
+
+func (this *Task) hasError() bool {
+	return this.Error != nil
+}

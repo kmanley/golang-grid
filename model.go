@@ -102,6 +102,27 @@ func SuspendJob(jobID JobID, graceful bool) error {
 	return nil
 }
 
+func CancelJob(jobID JobID) error {
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+	job, exists := Model.JobMap[jobID]
+	if !exists {
+		return ERR_INVALID_JOB_ID
+	}
+	job.cancel()
+	return nil
+}
+
+func RetryJob(jobID JobID) error {
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+	job, exists := Model.JobMap[jobID]
+	if !exists {
+		return ERR_INVALID_JOB_ID
+	}
+	return job.retry()
+}
+
 // NOTE: caller must hold mutex
 func getJobForWorker(workerName string) (job *Job) {
 	now := time.Now()

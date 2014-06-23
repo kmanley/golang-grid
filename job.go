@@ -44,21 +44,11 @@ func (this *JobDefinition) String() string {
 		fmt.Sprintf("%+v", *this.Ctrl)
 }
 
-/*
-waiting - len(idletasks)==numtasks
-working - len(runningtasks) > 0 TODO: but need to consider suspended/resumed, e.g. no suspended or resumed >suspended
-suspended - suspended && !resumed TODO: then suspend needs to move from runningtasks->idletasks which will preempt on workers
-canceled - suspended && !resumed && finished TODO: ditto
-done-ok - len(completedtasks)==numtasks and finished and numerrors==0
-done-err -finished and numerrors > 0
-
-*/
-
 const (
 	JOB_WAITING = iota
 	JOB_RUNNING
 	JOB_SUSPENDED
-	JOB_CANCELLED // same as suspended but can't be resumed
+	JOB_CANCELLED // same as suspended but can't be retried/resumed
 	JOB_DONE_OK
 	JOB_DONE_ERR
 )
@@ -73,7 +63,7 @@ type Job struct {
 	Created        time.Time
 	Started        time.Time
 	Suspended      time.Time
-	Resumed        time.Time
+	Retried        time.Time // note: retried or resumed
 	Cancelled      time.Time
 	Finished       time.Time
 	LastClientPoll time.Time
@@ -108,6 +98,7 @@ func (this *Job) allocateTask(worker *Worker) *Task {
 	}
 	now := time.Now()
 	task := heap.Pop(&(this.IdleTasks)).(*Task)
+	// TODO: replace all calls to task.Seq to a getter func
 	this.RunningTasks[task.Seq] = task
 	task.start(worker)
 	if this.Started.IsZero() {
@@ -140,23 +131,58 @@ func (this *Job) setTaskDone(task *Task, result interface{}, stdout string, stde
 }
 
 func (this *Job) suspend(graceful bool) {
-	now := time.Now()
-	this.Suspended = now
+	this.Suspended = time.Now()
 	// in a graceful suspend, any running tasks are allowed to continue to run
 	// in a graceless suspend, any running tasks will be terminated
 	if !graceful {
-		for _, task := range this.RunningTasks {
+		this._stopRunningTasks()
+	}
+}
+
+func (this *Job) cancel() {
+	this.Cancelled = time.Now()
+	this._stopRunningTasks()
+}
+
+func (this *Job) _stopRunningTasks() {
+	for _, task := range this.RunningTasks {
+		task.reset()
+		heap.Push(&(this.IdleTasks), task)
+		delete(this.RunningTasks, task.Seq)
+	}
+}
+
+// Retries a failed job, or resumes a suspended job. Any tasks that had previously
+// failed are retried.
+func (this *Job) retry() error {
+	// NOTE: resume also retries any tasks that failed prior to the suspend
+	state := this.State()
+	if !(state == JOB_SUSPENDED || state == JOB_DONE_ERR) {
+		return ERR_WRONG_JOB_STATE
+	}
+
+	now := time.Now()
+	this.Retried = now
+
+	// re-enqueue any failed tasks
+	for seq, task := range this.CompletedTasks {
+		if task.hasError() {
 			task.reset()
 			heap.Push(&(this.IdleTasks), task)
+			delete(this.CompletedTasks, seq)
 		}
 	}
+
+	this.NumErrors = 0
+	this.Finished = *new(time.Time)
+	return nil
 }
 
 func (this *Job) State() int {
 	if !this.Cancelled.IsZero() {
 		return JOB_CANCELLED
 	}
-	if this.Suspended.After(this.Resumed) {
+	if this.Suspended.After(this.Retried) {
 		return JOB_SUSPENDED
 	}
 	if !this.Finished.IsZero() {
@@ -166,13 +192,10 @@ func (this *Job) State() int {
 			return JOB_DONE_OK
 		}
 	}
-	if this.IdleTasks.Len() == this.NumTasks {
-		return JOB_WAITING
-	}
 	if len(this.RunningTasks) > 0 {
 		return JOB_RUNNING
 	}
-	panic("unexpected job state")
+	return JOB_WAITING
 }
 
 //func (this *Job) allocateTask()
