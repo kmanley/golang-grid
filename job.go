@@ -53,6 +53,14 @@ const (
 	JOB_DONE_ERR
 )
 
+var JOB_STATES []string = []string{
+	"JOB_WAITING",
+	"JOB_RUNNING",
+	"JOB_SUSPENDED",
+	"JOB_CANCELLED",
+	"JOB_DONE_OK",
+	"JOB_DONE_ERR"}
+
 type Job struct {
 	ID          JobID
 	Cmd         string
@@ -80,6 +88,13 @@ type JobMap map[JobID]*Job
 func NewJob(jobID JobID, cmd string, description string, data []interface{}, ctx *Context,
 	ctrl *JobControl) *Job {
 	now := time.Now()
+	if ctx == nil {
+		ctx = &Context{}
+	}
+	if ctrl == nil {
+		ctrl = &JobControl{}
+	}
+
 	newJob := &Job{ID: jobID, Cmd: cmd, Description: description, Ctx: *ctx,
 		Ctrl: *ctrl, Created: now}
 
@@ -118,6 +133,10 @@ func (this *Job) getRunningTask(seq int) *Task {
 
 func (this *Job) setTaskDone(worker *Worker, task *Task, result interface{},
 	stdout string, stderr string, err error) {
+	//if _, found := this.RunningTasks[task.Seq]; !found {
+	//	// model must check task is running before calling job.setTaskDone
+	//	panic(fmt.Sprintf("task %d not running in job %s", task.Seq, this.ID))
+	//}
 	now := time.Now()
 	task.finish(result, stdout, stderr, err)
 	this.CompletedTasks[task.Seq] = task
@@ -223,4 +242,8 @@ func (this *Job) State() int {
 		return JOB_RUNNING
 	}
 	return JOB_WAITING
+}
+
+func (this *Job) StateString() string {
+	return JOB_STATES[this.State()]
 }
