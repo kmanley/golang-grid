@@ -1,3 +1,19 @@
+/*
+jobs are in memory from time they are created until job.IsInFinalState()
+jobs that are in final state are purged from in-memory store after X minutes
+getJob(memOnly=False) will transparently pull a job that is on disk (not in mem) into mem
+there are only a few places where getJob(id, memOnly=False) should be used, e.g. retryJob
+
+jobs and tasks will enqueue state changes to db persister channel
+
+worker stuff is never persisted to db
+
+need another set of apis for pulling bulk data from db for gui
+
+check group about how to serialize error over json, or just serialize as string
+make our own error type that can serialize itself to json?
+*/
+
 package grid
 
 import (
@@ -14,7 +30,7 @@ type model struct {
 	Mutex   sync.Mutex
 	Fifo    bool
 	Jobs    JobHeap
-	JobMap  JobMap
+	jobMap  JobMap
 	Workers WorkerMap
 }
 
@@ -22,7 +38,7 @@ type model struct {
 func resetModel() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	Model.JobMap = make(JobMap)
+	Model.jobMap = make(JobMap)
 	Model.Jobs = Model.Jobs[0:0]
 	Model.Workers = make(WorkerMap)
 }
@@ -60,6 +76,24 @@ func newJobID() (newID JobID) {
 	return newID
 }
 
+func getJob(jobID JobID, memOnly bool) (job *Job, err error) {
+	job, found := Model.jobMap[jobID]
+	if !found {
+		if memOnly {
+			err = ERR_INVALID_JOB_ID
+		} else {
+			job, err = loadJobFromDB(jobID)
+		}
+	}
+	return
+}
+
+func loadJobFromDB(jobID JobID) (job *Job, err error) {
+	// TODO:
+	err = ERR_INVALID_JOB_ID
+	return
+}
+
 func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 	// TODO: handle AssignSingleTaskPerWorker
 	jobDef.Ctrl.CompiledWorkerNameRegex, err = regexp.Compile(jobDef.Ctrl.WorkerNameRegex)
@@ -73,7 +107,7 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	Model.JobMap[jobID] = newJob
+	Model.jobMap[jobID] = newJob
 	heap.Push(&(Model.Jobs), newJob)
 	fmt.Println("created job", newJob.ID)
 	return newJob.ID, nil
@@ -82,9 +116,12 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 func SetJobPriority(jobID JobID, priority int8) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	job, exists := Model.JobMap[jobID]
-	if !exists {
-		return ERR_INVALID_JOB_ID
+	job, err := getJob(jobID, true)
+	if err != nil {
+		return err
+	}
+	if !job.isWorking() {
+		return ERR_WRONG_JOB_STATE
 	}
 	// update the priority heap
 	Model.Jobs.ChangePriority(job, priority)
@@ -94,10 +131,14 @@ func SetJobPriority(jobID JobID, priority int8) error {
 func SetJobMaxConcurrency(jobID JobID, maxcon uint32) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	job, exists := Model.JobMap[jobID]
-	if !exists {
-		return ERR_INVALID_JOB_ID
+	job, err := getJob(jobID, true)
+	if err != nil {
+		return err
 	}
+	if !job.isWorking() {
+		return ERR_WRONG_JOB_STATE
+	}
+
 	job.setMaxConcurrency(maxcon)
 	return nil
 }
@@ -105,10 +146,14 @@ func SetJobMaxConcurrency(jobID JobID, maxcon uint32) error {
 func SuspendJob(jobID JobID, graceful bool) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	job, exists := Model.JobMap[jobID]
-	if !exists {
-		return ERR_INVALID_JOB_ID
+	job, err := getJob(jobID, true)
+	if err != nil {
+		return err
 	}
+	if !job.isWorking() {
+		return ERR_WRONG_JOB_STATE
+	}
+
 	job.suspend(graceful)
 	return nil
 }
@@ -116,9 +161,13 @@ func SuspendJob(jobID JobID, graceful bool) error {
 func CancelJob(jobID JobID) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	job, exists := Model.JobMap[jobID]
-	if !exists {
-		return ERR_INVALID_JOB_ID
+	job, err := getJob(jobID, false) // allow pulling from DB, e.g. could be suspended
+	if err != nil {
+		return err
+	}
+	// we allow canceling a suspended job
+	if !(job.isWorking() || job.State() == JOB_SUSPENDED) {
+		return ERR_WRONG_JOB_STATE
 	}
 	job.cancel()
 	return nil
@@ -127,9 +176,12 @@ func CancelJob(jobID JobID) error {
 func RetryJob(jobID JobID) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	job, exists := Model.JobMap[jobID]
-	if !exists {
-		return ERR_INVALID_JOB_ID
+	job, err := getJob(jobID, false)
+	if err != nil {
+		return err
+	}
+	if job.isWorking() {
+		return ERR_WRONG_JOB_STATE
 	}
 	return job.retry()
 }
@@ -145,8 +197,7 @@ func getJobForWorker(workerName string) (job *Job) {
 
 		// TODO: consider best order of the following clauses for performance
 		// TODO: add support for hidden workers?
-		state := job.State()
-		if !(state == JOB_RUNNING || state == JOB_WAITING) {
+		if !job.isWorking() {
 			// job is suspended, cancelled, or done
 			continue
 		}
@@ -203,9 +254,8 @@ func forgetWorker(workerName string) {
 
 func reallocateWorkerTask(worker *Worker) {
 	jobID := worker.CurrJob
-	job, exists := Model.JobMap[jobID]
-	if !exists {
-		// TODO: log a warning
+	job, err := getJob(jobID, true)
+	if err != nil {
 		return
 	}
 	job.reallocateWorkerTask(worker)
@@ -215,7 +265,7 @@ func GetTaskForWorker(workerName string) (task *Task) {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	worker := getOrCreateWorker(workerName)
-	if worker.IsWorking() {
+	if worker.isWorking() {
 		// Out of sync; we think this worker already has a task but it is requesting
 		// a new one. Since our view is the truth, we need to reallocate the task we
 		// thought this worker was working on. Note we don't return an error in this
@@ -247,16 +297,15 @@ func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{}
 		return nil
 	}
 
-	job, found := Model.JobMap[jobID]
-	if !found {
-		// TODO: logging
-		return nil
+	job, err := getJob(jobID, true)
+	if err != nil {
+		return err
 	}
 
 	task := job.getRunningTask(taskSeq)
 	if task == nil {
 		// TODO: logging
-		return nil
+		return ERR_TASK_NOT_RUNNING
 	}
 
 	job.setTaskDone(worker, task, result, stdout, stderr, taskError)
@@ -283,10 +332,9 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 		return nil
 	}
 
-	job, found := Model.JobMap[jobID]
-	if !found {
-		// TODO: logging
-		return ERR_INVALID_JOB_ID
+	job, err := getJob(jobID, true)
+	if err != nil {
+		return err
 	}
 
 	// state := job.State()
@@ -301,10 +349,18 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 	return nil
 }
 
+func getJobResult() {
+	// TODO: after this func is done get basic distributor/worker/client setup and demonstrate
+	// job running end to end
+	// next, add web ui
+	// next, add db persistence
+
+}
+
 func PrintStats() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-	fmt.Println(len(Model.JobMap), "job(s)")
+	fmt.Println(len(Model.jobMap), "job(s)")
 	jobs := Model.Jobs.Copy()
 	for jobs.Len() > 0 {
 		// note: this pops in priority + createdtime order
@@ -319,6 +375,7 @@ func PrintStats() {
 	}
 }
 
+/* TODO:
 func sanityCheck() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
@@ -339,3 +396,4 @@ func sanityCheck() {
 		// TODO: lots of other checks to do
 	}
 }
+*/

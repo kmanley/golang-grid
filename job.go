@@ -247,3 +247,15 @@ func (this *Job) State() int {
 func (this *Job) StateString() string {
 	return JOB_STATES[this.State()]
 }
+
+func (this *Job) isWorking() bool {
+	state := this.State()
+	if state == JOB_WAITING || state == JOB_RUNNING {
+		return true
+	}
+	return false
+}
+
+func (this *Job) isFinalState() bool {
+	return !this.isWorking()
+}
