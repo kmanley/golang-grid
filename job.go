@@ -127,6 +127,10 @@ func (this *Job) numIdleTasks() int {
 	return this.IdleTasks.Len()
 }
 
+func (this *Job) numRunningTasks() int {
+	return len(this.RunningTasks)
+}
+
 func (this *Job) getRunningTask(seq int) *Task {
 	task, found := this.RunningTasks[seq]
 	if !found {

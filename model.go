@@ -12,6 +12,12 @@ need another set of apis for pulling bulk data from db for gui
 
 check group about how to serialize error over json, or just serialize as string
 make our own error type that can serialize itself to json?
+
+// TODO: get basic distributor/worker/client setup and demonstrate
+// job running end to end
+// next, add web ui
+// next, add db persistence
+
 */
 
 package grid
@@ -256,7 +262,7 @@ func reallocateWorkerTask(worker *Worker) {
 	jobID := worker.CurrJob
 	job, err := getJob(jobID, true)
 	if err != nil {
-		return
+		return // TODO: log
 	}
 	job.reallocateWorkerTask(worker)
 }
@@ -346,34 +352,35 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 		return ERR_TASK_NOT_RUNNING
 	}
 
-	// If there is a higher priority task waiting, then we might need to kill this
-	// lower priority task
+	// If there is a higher priority job with idle tasks, then we might need to kill this
+	// lower priority task to allow the higher priority task to make progress
 	job2 := getJobForWorker(workerName)
-	if (job2.Ctrl.JobPriority > job.Ctrl.JobPriority) && (job2.numIdleTasks() > 0) {
+	if (job2 != nil) && (job2.Ctrl.JobPriority > job.Ctrl.JobPriority) && (job2.numIdleTasks() > 0) {
 		// there is a higher priority task available with idle tasks, so this task
 		// should be preempted. However, if there's another running task for this
 		// job that has been running for less time, then spare this task and preempt
 		// the other (it will be preempted when *its* worker calls checkJobStatus)
 		task2 := job.getShortestRunningTask()
 		if task2 == task {
-			return ERR_TASK_PREEMPTED
+			job.reallocateRunningTask(task)
+			return ERR_TASK_PREEMPTED_PRIORITY
 		}
 	}
 
-	// TODO:
 	// Someone may have modified this job's max concurrency via GUI or API such that
 	// it is currently running with too high a concurrency. If so, throttle it back
-	//maxconcurrency via the API or GUI, so it's possible the job is
-	//        # using more workers than it now should...in that case, return False to make a worker give up its task
+	// by reallocating this task. Here we don't discern between tasks that have been running
+	// a long vs. short time. That would be difficult to do and probably not worth the effort.
+	if uint32(job.numRunningTasks()) > job.getMaxConcurrency() {
+		job.reallocateRunningTask(task)
+		return ERR_TASK_PREEMPTED_CONCURRENCY
+	}
 
+	// No error - worker should continue working on this task
 	return nil
 }
 
 func GetJobResult(jobID JobID) ([]interface{}, error) {
-	// TODO: after this func is done get basic distributor/worker/client setup and demonstrate
-	// job running end to end
-	// next, add web ui
-	// next, add db persistence
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 
@@ -382,17 +389,28 @@ func GetJobResult(jobID JobID) ([]interface{}, error) {
 		return nil, err
 	}
 
+	/*
+		JOB_WAITING = iota
+		JOB_RUNNING
+		JOB_SUSPENDED
+		JOB_CANCELLED // same as suspended but can't be retried/resumed
+		JOB_DONE_OK
+		JOB_DONE_ERR
+
+	*/
+
 	state := job.State()
-	if state == JOB_DONE_OK {
+	switch state {
+	case JOB_WAITING, JOB_RUNNING, JOB_SUSPENDED:
+		return nil, &JobNotFinished{State: state}
+	case JOB_CANCELLED, JOB_DONE_ERR:
+		// TODO: support GetJobErrors() for the error case
+		return nil, &ErrorJobFailed{State: state}
+	default:
 		res := job.getResult()
 		return res, nil
-	} else {
-		return nil, &ErrorWrongJobState{State: state}
 	}
 }
-
-// TODO:
-func GetJobErrors(jobID JobID) {}
 
 func PrintStats() {
 	Model.Mutex.Lock()
