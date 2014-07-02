@@ -7,6 +7,19 @@ import (
 	"time"
 )
 
+const (
+	TASK_WAITING = iota
+	TASK_RUNNING
+	TASK_DONE_OK
+	TASK_DONE_ERR
+)
+
+var TASK_STATES []string = []string{
+	"TASK_WAITING",
+	"TASK_RUNNING",
+	"TASK_DONE_OK",
+	"TASK_DONE_ERR"}
+
 type Task struct {
 	Job      JobID
 	Seq      int
@@ -64,4 +77,44 @@ func (this *Task) finish(result interface{}, stdout string, stderr string, err e
 
 func (this *Task) hasError() bool {
 	return this.Error != nil
+}
+
+func (this *Task) State() int {
+	started, finished := this.Started, this.Finished
+	if started.IsZero() {
+		return TASK_WAITING
+	} else {
+		// task has started
+		if finished.IsZero() {
+			return TASK_RUNNING
+		} else {
+			if this.hasError() {
+				return TASK_DONE_ERR
+			} else {
+				return TASK_DONE_OK
+			}
+		}
+	}
+}
+
+func (this *Task) StateString() string {
+	return TASK_STATES[this.State()]
+}
+
+// Returns current elapsed time for a running task. To get elapsed time
+// for a task that may have completed, use elapsed
+func (this *Task) elapsedRunning(now time.Time) time.Duration {
+	if !(this.State() == TASK_RUNNING) {
+		return 0
+	}
+	return now.Sub(this.Started)
+}
+
+// Returns current elapsed time for a completed task
+// Returns 0 for an unstarted or currently running task
+func (this *Task) elapsed() time.Duration {
+	if this.Finished.IsZero() {
+		return 0
+	}
+	return this.Finished.Sub(this.Started)
 }

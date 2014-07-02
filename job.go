@@ -23,7 +23,7 @@ type JobControl struct {
 	// TODO: later
 	//AssignSingleTaskPerWorker bool
 	//TaskWorkerAssignment      map[string][]uint32
-	JobPriority          int8
+	JobPriority          int8 // higher value means higher priority
 	JobTimeout           uint32
 	TaskTimeout          uint32
 	TaskSeemsHungTimeout uint32
@@ -121,6 +121,10 @@ func (this *Job) allocateTask(worker *Worker) *Task {
 	}
 	worker.assignTask(task)
 	return task
+}
+
+func (this *Job) numIdleTasks() int {
+	return this.IdleTasks.Len()
 }
 
 func (this *Job) getRunningTask(seq int) *Task {
@@ -272,4 +276,17 @@ func (this *Job) getResult() []interface{} {
 		// TODO:
 		return nil
 	}
+}
+
+func (this *Job) getShortestRunningTask() (minTask *Task) {
+	now := time.Now()
+	minDuration := time.Duration(1<<63 - 1) // start with max duration
+	for _, task := range this.RunningTasks {
+		elapsed := task.elapsedRunning(now)
+		if elapsed < minDuration {
+			minTask = task
+			minDuration = elapsed
+		}
+	}
+	return
 }

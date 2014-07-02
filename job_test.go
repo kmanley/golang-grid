@@ -78,3 +78,15 @@ func TestJobStructFirstErrContinue(t *testing.T) {
 	job.setTaskDone(w2, t2, 20, "", "", nil)
 	assertJobState(t, job, JOB_DONE_ERR)
 }
+
+func TestJobStructShortestRunningTask(t *testing.T) {
+	job := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2, 3}, nil, nil)
+	w1 := NewWorker("worker1")
+	w2 := NewWorker("worker2")
+	w3 := NewWorker("worker3")
+	job.allocateTask(w1)
+	job.allocateTask(w2)
+	t3 := job.allocateTask(w3)
+	tshort := job.getShortestRunningTask()
+	assertTrue(t, tshort == t3, "")
+}

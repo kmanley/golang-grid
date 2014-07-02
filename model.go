@@ -317,7 +317,7 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 
-	// TODO: this block is copied from SetTaskDone, refactor
+	// TODO: much of this function is copied from SetTaskDone, refactor
 	worker := getOrCreateWorker(workerName)
 	if !(worker.CurrJob == jobID && worker.CurrTask == taskSeq) {
 		// Out of sync; the worker is asking about a different job/task to
@@ -328,8 +328,7 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 		//          workers and what they're working on
 		// TODO: logging
 		reallocateWorkerTask(worker)
-		// Ignore the error; the worker will request a new task and get back in sync
-		return nil
+		return ERR_WORKER_OUT_OF_SYNC
 	}
 
 	job, err := getJob(jobID, true)
@@ -337,15 +336,36 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 		return err
 	}
 
-	// state := job.State()
-	// TODO: if state == JOB_CANCELLED || state == JOB_DONE_ERR || state == JOB
-
-	// TODO: need to consider suspended task with graceful vs. graceless param...
+	// Note we don't have to check the job state; only that the Task is
+	// still in the jobs runmap. For example job could be suspended; if it were suspended
+	// gracefully, the task will still be in the runmap, if it were graceless, the Task
+	// would have already been moved to the idlemap
 	task := job.getRunningTask(taskSeq)
 	if task == nil {
 		// TODO: logging
 		return ERR_TASK_NOT_RUNNING
 	}
+
+	// If there is a higher priority task waiting, then we might need to kill this
+	// lower priority task
+	job2 := getJobForWorker(workerName)
+	if (job2.Ctrl.JobPriority > job.Ctrl.JobPriority) && (job2.numIdleTasks() > 0) {
+		// there is a higher priority task available with idle tasks, so this task
+		// should be preempted. However, if there's another running task for this
+		// job that has been running for less time, then spare this task and preempt
+		// the other (it will be preempted when *its* worker calls checkJobStatus)
+		task2 := job.getShortestRunningTask()
+		if task2 == task {
+			return ERR_TASK_PREEMPTED
+		}
+	}
+
+	// TODO:
+	// Someone may have modified this job's max concurrency via GUI or API such that
+	// it is currently running with too high a concurrency. If so, throttle it back
+	//maxconcurrency via the API or GUI, so it's possible the job is
+	//        # using more workers than it now should...in that case, return False to make a worker give up its task
+
 	return nil
 }
 
@@ -369,7 +389,6 @@ func GetJobResult(jobID JobID) ([]interface{}, error) {
 	} else {
 		return nil, &ErrorWrongJobState{State: state}
 	}
-
 }
 
 // TODO:
