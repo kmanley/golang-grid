@@ -31,7 +31,7 @@ type Worker struct {
 	LastPoll time.Time
 }
 
-func (this *Worker) IsWorking() bool {
+func (this *Worker) isWorking() bool {
 	return len(this.CurrJob) > 0
 }
 

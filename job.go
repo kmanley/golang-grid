@@ -259,3 +259,17 @@ func (this *Job) isWorking() bool {
 func (this *Job) isFinalState() bool {
 	return !this.isWorking()
 }
+
+func (this *Job) getResult() []interface{} {
+	state := this.State()
+	if state == JOB_DONE_OK {
+		res := make([]interface{}, this.NumTasks)
+		for seq, task := range this.CompletedTasks {
+			res[seq] = task.Outdata
+		}
+		return res
+	} else {
+		// TODO:
+		return nil
+	}
+}

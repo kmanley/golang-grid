@@ -349,13 +349,31 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 	return nil
 }
 
-func getJobResult() {
+func GetJobResult(jobID JobID) ([]interface{}, error) {
 	// TODO: after this func is done get basic distributor/worker/client setup and demonstrate
 	// job running end to end
 	// next, add web ui
 	// next, add db persistence
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+
+	job, err := getJob(jobID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	state := job.State()
+	if state == JOB_DONE_OK {
+		res := job.getResult()
+		return res, nil
+	} else {
+		return nil, &ErrorWrongJobState{State: state}
+	}
 
 }
+
+// TODO:
+func GetJobErrors(jobID JobID) {}
 
 func PrintStats() {
 	Model.Mutex.Lock()

@@ -25,7 +25,7 @@ func TestCreateJobs(t *testing.T) {
 			Ctrl: ctrl})
 	}
 	PrintStats()
-	sanityCheck()
+	//sanityCheck()
 	for i := 0; i < COUNT; i++ {
 
 	}
@@ -33,7 +33,7 @@ func TestCreateJobs(t *testing.T) {
 
 func TestSimple(t *testing.T) {
 	resetModel()
-	CreateJob(&JobDefinition{Cmd: "python.exe doit.py", Data: []interface{}{1, 3, 5, 7, 9},
+	jobID, _ := CreateJob(&JobDefinition{Cmd: "python.exe doit.py", Data: []interface{}{1, 3, 5, 7, 9},
 		Description: "my first job", Ctx: &Context{"foo": "bar"},
 		Ctrl: &JobControl{MaxConcurrency: 20}})
 	PrintStats()
@@ -49,11 +49,14 @@ func TestSimple(t *testing.T) {
 
 	//fmt.Println(t1, t2, t3, t4, t5)
 
-	SetTaskDone("worker1", t1.Job, t1.Seq, 20, "", "", nil)
-	SetTaskDone("worker2", t2.Job, t2.Seq, 20, "", "", nil)
-	SetTaskDone("worker3", t3.Job, t3.Seq, 20, "", "", nil)
-	SetTaskDone("worker4", t4.Job, t4.Seq, 20, "", "", nil)
-	SetTaskDone("worker5", t5.Job, t5.Seq, 20, "", "", nil)
+	SetTaskDone("worker1", t1.Job, t1.Seq, 10, "", "", nil)
+	SetTaskDone("worker2", t2.Job, t2.Seq, 30, "", "", nil)
+	SetTaskDone("worker3", t3.Job, t3.Seq, 50, "", "", nil)
+	SetTaskDone("worker4", t4.Job, t4.Seq, 70, "", "", nil)
+	SetTaskDone("worker5", t5.Job, t5.Seq, 90, "", "", nil)
 
 	PrintStats()
+
+	res, _ := GetJobResult(jobID)
+	fmt.Println("RESULT: ", res)
 }

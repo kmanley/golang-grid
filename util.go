@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TODO: use testify instead
 func assertTrue(t *testing.T, cond bool, fmt string, items ...interface{}) {
 	if !cond {
 		if fmt == "" {
