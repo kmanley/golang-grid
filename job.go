@@ -250,6 +250,10 @@ func (this *Job) State() int {
 	if len(this.RunningTasks) > 0 {
 		return JOB_RUNNING
 	}
+	// NOTE: JOB_WAITING can be returned even
+	// if some tasks have been completed, if there are
+	// currently no running tasks, e.g. right after a
+	// graceful suspend/resume
 	return JOB_WAITING
 }
 

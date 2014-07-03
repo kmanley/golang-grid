@@ -31,8 +31,8 @@ func simulate(numWorkers int, jobIDs []grid.JobID) {
 				fmt.Println("client: job", jobID, "finished:", res)
 				delete(doneMap, jobID)
 			} else {
-				if _, notFinished := err.(*grid.JobNotFinished); notFinished {
-					fmt.Println("client: job", jobID, "working")
+				if e, notFinished := err.(*grid.JobNotFinished); notFinished {
+					fmt.Println("client: job", jobID, e.Error())
 				} else {
 					fmt.Println("client: job", jobID, "failed", err.Error())
 					delete(doneMap, jobID)
@@ -66,11 +66,13 @@ START:
 		}
 		fmt.Println(name, "got task", task.Job, task.Seq)
 
-		for i := 0; i < 2; i++ {
-			time.Sleep(100 * time.Millisecond)
+		// simulate the task taking some time to compute, during which
+		// time we occasionally check status
+		for i := 0; i < 3; i++ {
+			time.Sleep(150 * time.Millisecond)
 			err := grid.CheckJobStatus(name, task.Job, task.Seq)
 			if err != nil {
-				fmt.Println(name, "got error", err)
+				fmt.Println(name, "got check status error", err)
 				goto START
 			}
 		}
@@ -125,9 +127,17 @@ func test2JobsWithCancel() {
 	job2, _ := grid.CreateJob(&grid.JobDefinition{ID: "job2", Cmd: "", Data: []interface{}{-1, -2, -3, -4, -5},
 		Description: "", Ctx: &grid.Context{"foo": "bar"},
 		Ctrl: &grid.JobControl{MaxConcurrency: 0, JobPriority: 100}})
-	time.AfterFunc(100*time.Millisecond, func() { grid.CancelJob(job1) })
+	time.AfterFunc(100*time.Millisecond, func() { fmt.Println("cancelling job ", job1); grid.CancelJob(job1) })
 	simulate(3, []grid.JobID{job1, job2})
+}
 
+func testJobWithGracefulSuspendResume() {
+	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "", Data: []interface{}{1, 3, 5, 7, 9, 11, 13, 15, 17},
+		Description: "", Ctx: &grid.Context{"foo": "bar"},
+		Ctrl: &grid.JobControl{MaxConcurrency: 0}})
+	time.AfterFunc(300*time.Millisecond, func() { fmt.Println("suspending job", job1); grid.SuspendJob(job1, true) })
+	time.AfterFunc(3*time.Second, func() { fmt.Println("resuming job", job1); grid.RetryJob(job1) })
+	simulate(3, []grid.JobID{job1})
 }
 
 func main() {
@@ -138,7 +148,8 @@ func main() {
 	//testBasic()
 	//test2JobsBasic()
 	//test2JobsWithPriority()
-	test2JobsWithCancel()
+	//test2JobsWithCancel()
+	testJobWithGracefulSuspendResume()
 
 	wg.Wait()
 }
