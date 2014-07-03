@@ -26,7 +26,7 @@ type JobNotFinished struct {
 }
 
 func (this *JobNotFinished) Error() string {
-	return fmt.Sprintf("job is not finished (state %s)", this.State)
+	return fmt.Sprintf("job is not finished (state %s)", JOB_STATES[this.State])
 }
 
 type ErrorJobFailed struct {
@@ -34,5 +34,5 @@ type ErrorJobFailed struct {
 }
 
 func (this *ErrorJobFailed) Error() string {
-	return fmt.Sprintf("job failed (state %s)", this.State)
+	return fmt.Sprintf("job failed (state %s)", JOB_STATES[this.State])
 }

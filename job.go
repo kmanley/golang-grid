@@ -32,6 +32,7 @@ type JobControl struct {
 }
 
 type JobDefinition struct {
+	ID          JobID // not normally used; if specified then we don't generate an ID
 	Cmd         string
 	Data        interface{} // TODO: can this be []interface{} instead? or was there a json/gob marshaling issue?
 	Description string

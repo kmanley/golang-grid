@@ -26,7 +26,7 @@ func (this *Client) CreateJob(cmd string, data interface{}) JobID {
 
 func (this *Client) CreateJobEx(cmd string, data interface{}, description string,
 	ctx *Context, ctrl *JobControl) (jobID JobID) {
-	jobDef := &JobDefinition{cmd, data, description, ctx, ctrl}
+	jobDef := &JobDefinition{"", cmd, data, description, ctx, ctrl}
 
 	err := this.conn.Call("ClientApi.CreateJob", jobDef, &jobID)
 	if err != nil {

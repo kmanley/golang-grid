@@ -59,7 +59,8 @@ var lastJobID JobID
 
 const JOBID_FORMAT = "060102150405.999999"
 
-// TODO: replace with guid? or add distributor ID prefix? the problem with the existing
+// TODO: replace with guid? add distributor ID prefix? add random suffix?
+// the problem with the existing
 // scheme is that there could be dupes in an environment with more than 1 grid
 // OTOH this scheme has a nice time-ordered property
 func newJobID() (newID JobID) {
@@ -107,7 +108,10 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 		return "", err // TODO: wrap error
 	}
 
-	jobID = newJobID()
+	jobID = jobDef.ID
+	if jobID == "" {
+		jobID = newJobID()
+	}
 	newJob := NewJob(jobID, jobDef.Cmd, jobDef.Description, (jobDef.Data).([]interface{}),
 		jobDef.Ctx, jobDef.Ctrl)
 
@@ -371,7 +375,7 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 	// it is currently running with too high a concurrency. If so, throttle it back
 	// by reallocating this task. Here we don't discern between tasks that have been running
 	// a long vs. short time. That would be difficult to do and probably not worth the effort.
-	if uint32(job.numRunningTasks()) > job.getMaxConcurrency() {
+	if (job.getMaxConcurrency() > 0) && (uint32(job.numRunningTasks()) > job.getMaxConcurrency()) {
 		job.reallocateRunningTask(task)
 		return ERR_TASK_PREEMPTED_CONCURRENCY
 	}
