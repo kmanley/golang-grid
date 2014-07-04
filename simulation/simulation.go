@@ -55,6 +55,7 @@ func simulate(numWorkers int, jobIDs []grid.JobID) {
 				if e, notFinished := err.(*grid.JobNotFinished); notFinished {
 					fmt.Println("client: job", jobID, e.Error())
 				} else {
+					// TODO: print GetJobErrors()
 					fmt.Println("client: job", jobID, "failed", err.Error())
 					delete(jobMap, jobID)
 				}
@@ -228,6 +229,13 @@ func testJobWithWorkerNameRegex() {
 	simulate(5, []grid.JobID{job1})
 }
 
+func testJobWithTaskErrorContinue() {
+	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "taskerror1", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
+		Description: "", Ctx: &grid.Context{"foo": "bar"},
+		Ctrl: &grid.JobControl{ContinueJobOnTaskError: true}})
+	simulate(5, []grid.JobID{job1})
+}
+
 func testJobWithTaskErrorNoContinue() {
 	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "taskerror1", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
 		Description: "", Ctx: &grid.Context{"foo": "bar"},
@@ -250,7 +258,8 @@ func main() {
 	//testPreemptPriority()
 	//testJobFutureStartTime()
 	//testJobWithWorkerNameRegex()
-	testJobWithTaskErrorNoContinue()
+	testJobWithTaskErrorContinue()
+	//testJobWithTaskErrorNoContinue()
 
 	wg.Wait()
 }
