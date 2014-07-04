@@ -24,11 +24,11 @@ func (this *WorkerStats) reset() {
 }
 
 type Worker struct {
-	Name     string
-	CurrJob  JobID
-	CurrTask int
-	Stats    WorkerStats
-	LastPoll time.Time
+	Name        string
+	CurrJob     JobID
+	CurrTask    int
+	Stats       WorkerStats
+	LastContact time.Time
 }
 
 func (this *Worker) isWorking() bool {
@@ -42,15 +42,18 @@ func NewWorker(name string) *Worker {
 }
 
 func (this *Worker) assignTask(task *Task) {
-	now := time.Now()
 	this.CurrJob = task.Job
 	this.CurrTask = task.Seq
-	this.LastPoll = now
+	//this.updateLastContact()
 }
 
 func (this *Worker) reset() {
 	this.CurrJob = ""
 	this.CurrTask = 0
 	// NOTE: we don't reset stats
-	this.LastPoll = *new(time.Time)
+	//this.updateLastContact()
+}
+
+func (this *Worker) updateLastContact() {
+	this.LastContact = time.Now()
 }

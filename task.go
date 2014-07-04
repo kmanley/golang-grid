@@ -118,3 +118,11 @@ func (this *Task) elapsed() time.Duration {
 	}
 	return this.Finished.Sub(this.Started)
 }
+
+type WorkerTask struct {
+	Job  JobID
+	Seq  int
+	Cmd  string
+	Data interface{}
+	Ctx  *Context
+}

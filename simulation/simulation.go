@@ -12,6 +12,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/kmanley/golang-grid"
 	"runtime"
@@ -78,27 +79,49 @@ START:
 			return
 		default:
 		}
-		task := grid.GetTaskForWorker(name)
-		if task == nil {
+		wtask := grid.GetWorkerTask(name)
+		if wtask == nil {
 			fmt.Println(name, "no tasks available")
 			time.Sleep(3 * time.Second)
 			continue
 		}
-		fmt.Println(name, "got task", task.Job, task.Seq)
+		fmt.Println(name, "got task", wtask.Job, wtask.Seq)
 
 		// simulate the task taking some time to compute, during which
 		// time we occasionally check status
 		for i := 0; i < 3; i++ {
 			time.Sleep(300 * time.Millisecond)
-			err := grid.CheckJobStatus(name, task.Job, task.Seq)
+			err := grid.CheckJobStatus(name, wtask.Job, wtask.Seq)
 			if err != nil {
-				fmt.Println(name, "working on", task.Job, task.Seq, "got check status error", err)
+				fmt.Println(name, "working on", wtask.Job, wtask.Seq, "got check status error", err)
 				goto START
 			}
 		}
 
-		fmt.Println(name, "setting task", task.Job, task.Seq, "done")
-		grid.SetTaskDone(name, task.Job, task.Seq, task.Indata.(int)*10, "", "", nil)
+		var res interface{}
+		var stderr string
+		var err error
+		switch wtask.Cmd {
+		case "taskerror1":
+			if name == "worker1" {
+				res = interface{}(nil)
+				stderr = "stderr data"
+				err = errors.New("task failed!")
+			}
+		default:
+			// by default, multiply by 10
+			res = wtask.Data.(int) * 10
+			stderr = ""
+			err = error(nil)
+		}
+		var serr string
+		if err == nil {
+			serr = ""
+		} else {
+			serr = "(" + err.Error() + ")"
+		}
+		fmt.Println(name, "setting task", wtask.Job, wtask.Seq, "done", serr)
+		grid.SetTaskDone(name, wtask.Job, wtask.Seq, res, "stdout data", stderr, err)
 	}
 }
 
@@ -205,6 +228,13 @@ func testJobWithWorkerNameRegex() {
 	simulate(5, []grid.JobID{job1})
 }
 
+func testJobWithTaskErrorNoContinue() {
+	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "taskerror1", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
+		Description: "", Ctx: &grid.Context{"foo": "bar"},
+		Ctrl: &grid.JobControl{ContinueJobOnTaskError: false}})
+	simulate(5, []grid.JobID{job1})
+}
+
 func main() {
 	numcpu := runtime.NumCPU()
 	fmt.Println("setting GOMAXPROCS to", numcpu)
@@ -219,7 +249,8 @@ func main() {
 	//testChangeConcurrency()
 	//testPreemptPriority()
 	//testJobFutureStartTime()
-	testJobWithWorkerNameRegex()
+	//testJobWithWorkerNameRegex()
+	testJobWithTaskErrorNoContinue()
 
 	wg.Wait()
 }

@@ -255,6 +255,10 @@ func getOrCreateWorker(workerName string) *Worker {
 		worker = NewWorker(workerName)
 		Model.Workers[workerName] = worker
 	}
+	// getOrCreateWorker is only called in functions that
+	// are called by workers, so we update the worker's
+	// last contact time in this central place
+	worker.updateLastContact()
 	return worker
 }
 
@@ -271,7 +275,7 @@ func reallocateWorkerTask(worker *Worker) {
 	job.reallocateWorkerTask(worker)
 }
 
-func GetTaskForWorker(workerName string) (task *Task) {
+func GetWorkerTask(workerName string) *WorkerTask {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	worker := getOrCreateWorker(workerName)
@@ -285,10 +289,11 @@ func GetTaskForWorker(workerName string) (task *Task) {
 	job := getJobForWorker(workerName)
 	if job == nil {
 		// no work available right now
-		return
+		return nil
 	}
-	task = job.allocateTask(worker)
-	return
+	task := job.allocateTask(worker)
+	ret := &WorkerTask{job.ID, task.Seq, job.Cmd, task.Indata, &job.Ctx}
+	return ret
 }
 
 func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{},
