@@ -55,7 +55,6 @@ func simulate(numWorkers int, jobIDs []grid.JobID) {
 				if e, notFinished := err.(*grid.JobNotFinished); notFinished {
 					fmt.Println("client: job", jobID, e.Error())
 				} else {
-					// TODO: print GetJobErrors()
 					fmt.Println("client: job", jobID, "failed", err.Error())
 					delete(jobMap, jobID)
 				}
@@ -171,7 +170,7 @@ func test2JobsWithCancel() {
 	job2, _ := grid.CreateJob(&grid.JobDefinition{ID: "job2", Cmd: "", Data: []interface{}{-1, -2, -3, -4, -5},
 		Description: "", Ctx: &grid.Context{"foo": "bar"},
 		Ctrl: &grid.JobControl{MaxConcurrency: 0, JobPriority: 100}})
-	time.AfterFunc(100*time.Millisecond, func() { fmt.Println("cancelling job ", job1); grid.CancelJob(job1) })
+	time.AfterFunc(100*time.Millisecond, func() { fmt.Println("cancelling job ", job1); grid.CancelJob(job1, "testing") })
 	simulate(3, []grid.JobID{job1, job2})
 }
 
@@ -248,6 +247,14 @@ func main() {
 	fmt.Println("setting GOMAXPROCS to", numcpu)
 	runtime.GOMAXPROCS(numcpu)
 
+	/* TODO: make simulations selectable from command line
+	fmt.Println(`
+	1. basic job with 1 job
+	2. basic test with 2 jobs
+	3. two jobs with priority
+	`)
+	*/
+
 	//testBasic()
 	//test2JobsBasic()
 	//test2JobsWithPriority()
@@ -258,8 +265,8 @@ func main() {
 	//testPreemptPriority()
 	//testJobFutureStartTime()
 	//testJobWithWorkerNameRegex()
-	testJobWithTaskErrorContinue()
-	//testJobWithTaskErrorNoContinue()
+	//testJobWithTaskErrorContinue()
+	testJobWithTaskErrorNoContinue()
 
 	wg.Wait()
 }

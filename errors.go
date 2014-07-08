@@ -30,9 +30,22 @@ func (this *JobNotFinished) Error() string {
 }
 
 type ErrorJobFailed struct {
-	State int
+	State  int
+	Reason string
 }
 
 func (this *ErrorJobFailed) Error() string {
-	return fmt.Sprintf("job failed (state %s)", JOB_STATES[this.State])
+	return fmt.Sprintf("job failed (state %s): %s", JOB_STATES[this.State], this.Reason)
+}
+
+type ErrorJobTimedOut struct{}
+
+func (this *ErrorJobTimedOut) Error() string {
+	return "job timed out"
+}
+
+type ErrorTaskTimedOut struct{}
+
+func (this *ErrorTaskTimedOut) Error() string {
+	return "task timed out"
 }

@@ -18,6 +18,15 @@ make our own error type that can serialize itself to json?
 // next, add web ui
 // next, add db persistence
 
+job errors - do we want to store this in the job or note it by setting error on a task?
+  e.g. job timeout
+
+TODO: background goroutine which
+ - checks for job timeout (cancel or suspend in this case?)
+ - checks for task timeout - in this case set error for the task; the job could continue if continueontaskerror is true
+ - check for client abandoned
+ - check for hung workers and reallocate tasks
+
 */
 
 package grid
@@ -112,11 +121,15 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 	if jobID == "" {
 		jobID = newJobID()
 	}
-	newJob := NewJob(jobID, jobDef.Cmd, jobDef.Description, (jobDef.Data).([]interface{}),
-		jobDef.Ctx, jobDef.Ctrl)
 
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
+	// TODO: make sure jobID isn't already in jobMap; this can happen if user specifies their
+	// own jobid and would cause chaos
+
+	newJob := NewJob(jobID, jobDef.Cmd, jobDef.Description, (jobDef.Data).([]interface{}),
+		jobDef.Ctx, jobDef.Ctrl)
+
 	Model.jobMap[jobID] = newJob
 	heap.Push(&(Model.Jobs), newJob)
 	fmt.Println("created job", newJob.ID)
@@ -168,7 +181,7 @@ func SuspendJob(jobID JobID, graceful bool) error {
 	return nil
 }
 
-func CancelJob(jobID JobID) error {
+func CancelJob(jobID JobID, reason string) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
 	job, err := getJob(jobID, false) // allow pulling from DB, e.g. could be suspended
@@ -179,10 +192,11 @@ func CancelJob(jobID JobID) error {
 	if !(job.isWorking() || job.State() == JOB_SUSPENDED) {
 		return ERR_WRONG_JOB_STATE
 	}
-	job.cancel()
+	job.cancel(reason)
 	return nil
 }
 
+// TODO: confirm cancelled job can't be retried but suspended job can
 func RetryJob(jobID JobID) error {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
@@ -361,6 +375,22 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 		return ERR_TASK_NOT_RUNNING
 	}
 
+	if job.timedOut() {
+		// TODO: worker should call setTaskDone in response to this, with err="task timed out"
+		// this gives us a chance to capture stdout/stderr and possibly diagnose why the
+		// task timed out. We rely on the worker to honor this return code.
+		return &ErrorJobTimedOut{}
+	}
+
+	if job.taskTimedOut(task) {
+		// TODO: worker should call setTaskDone in response to this, with err="task timed out"
+		// this gives us a chance to capture stdout/stderr and possibly diagnose why the
+		// task timed out. We rely on the worker to honor this return code.
+		return &ErrorTaskTimedOut{}
+	}
+
+	//if job.clientTimedOut()
+
 	// If there is a higher priority job with idle tasks, then we might need to kill this
 	// lower priority task to allow the higher priority task to make progress
 	job2 := getJobForWorker(workerName)
@@ -398,27 +428,23 @@ func GetJobResult(jobID JobID) ([]interface{}, error) {
 		return nil, err
 	}
 
-	/*
-		JOB_WAITING = iota
-		JOB_RUNNING
-		JOB_SUSPENDED
-		JOB_CANCELLED // same as suspended but can't be retried/resumed
-		JOB_DONE_OK
-		JOB_DONE_ERR
-
-	*/
-
 	state := job.State()
 	switch state {
 	case JOB_WAITING, JOB_RUNNING, JOB_SUSPENDED:
 		return nil, &JobNotFinished{State: state}
 	case JOB_CANCELLED, JOB_DONE_ERR:
 		// TODO: support GetJobErrors() for the error case
-		return nil, &ErrorJobFailed{State: state}
+		return nil, &ErrorJobFailed{State: state, Reason: job.getFailureReason()}
 	default:
 		res := job.getResult()
 		return res, nil
 	}
+}
+
+func Sweep() {
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+
 }
 
 func PrintStats() {

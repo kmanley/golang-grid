@@ -23,9 +23,9 @@ type JobControl struct {
 	// TODO: later
 	//AssignSingleTaskPerWorker bool
 	//TaskWorkerAssignment      map[string][]uint32
-	JobPriority          int8 // higher value means higher priority
-	JobTimeout           uint32
-	TaskTimeout          uint32
+	JobPriority          int8   // higher value means higher priority
+	JobTimeout           uint32 // seconds
+	TaskTimeout          uint32 // seconds
 	TaskSeemsHungTimeout uint32
 	AbandonedJobTimeout  uint32
 	MaxTaskReallocations uint8
@@ -63,17 +63,17 @@ var JOB_STATES []string = []string{
 	"JOB_DONE_ERR"}
 
 type Job struct {
-	ID          JobID
-	Cmd         string
-	Description string
-	Ctrl        JobControl
-	Ctx         Context
-	//Status         int
+	ID             JobID
+	Cmd            string
+	Description    string
+	Ctrl           JobControl
+	Ctx            Context
 	Created        time.Time
 	Started        time.Time
 	Suspended      time.Time
 	Retried        time.Time // note: retried or resumed
 	Cancelled      time.Time
+	CancelReason   string // reason job was cancelled
 	Finished       time.Time
 	LastClientPoll time.Time
 	NumTasks       int
@@ -178,8 +178,9 @@ func (this *Job) setMaxConcurrency(maxcon uint32) {
 	this.Ctrl.MaxConcurrency = maxcon
 }
 
-func (this *Job) cancel() {
+func (this *Job) cancel(reason string) {
 	this.Cancelled = time.Now()
+	this.CancelReason = reason
 	this._stopRunningTasks()
 }
 
@@ -287,6 +288,8 @@ func (this *Job) getResult() []interface{} {
 	}
 }
 
+//func (this *Job) getErrors() []interface
+
 func (this *Job) getShortestRunningTask() (minTask *Task) {
 	now := time.Now()
 	minDuration := time.Duration(1<<63 - 1) // start with max duration
@@ -298,4 +301,35 @@ func (this *Job) getShortestRunningTask() (minTask *Task) {
 		}
 	}
 	return
+}
+
+func (this *Job) getFailureReason() string {
+	switch this.State() {
+	case JOB_CANCELLED:
+		return this.CancelReason
+	case JOB_DONE_ERR:
+		return fmt.Sprintf("%d task error(s)", this.NumErrors)
+	default:
+		return ""
+	}
+}
+
+func (this *Job) timedOut() bool {
+	if this.Ctrl.JobTimeout == 0 {
+		return false
+	}
+	// TODO: has job started? blah blah
+	return true
+}
+
+func (this *Job) taskTimedOut(task *Task) bool {
+	// TODO: use task.elapsedRunning instead
+	if task.Started.IsZero() || this.Ctrl.TaskTimeout == 0 {
+		// task hasn't started, or job has no task timeout
+		return false
+	}
+	if time.Since(task.Started) > (time.Duration(this.Ctrl.TaskTimeout) * time.Second) {
+		return true
+	}
+	return false
 }
