@@ -38,14 +38,20 @@ func (this *ErrorJobFailed) Error() string {
 	return fmt.Sprintf("job failed (state %s): %s", JOB_STATES[this.State], this.Reason)
 }
 
-type ErrorJobTimedOut struct{}
-
-func (this *ErrorJobTimedOut) Error() string {
-	return "job timed out"
+type ErrorJobTimedOut struct {
+	Timeout float64
+	Elapsed float64
 }
 
-type ErrorTaskTimedOut struct{}
+func (this *ErrorJobTimedOut) Error() string {
+	return fmt.Sprintf("job timed out after %.1f secs (actual=%.1f secs)", this.Timeout, this.Elapsed)
+}
+
+type ErrorTaskTimedOut struct {
+	Timeout float64
+	Elapsed float64
+}
 
 func (this *ErrorTaskTimedOut) Error() string {
-	return "task timed out"
+	return fmt.Sprintf("job timed out after %.1f secs (actual=%.1f secs)", this.Timeout, this.Elapsed)
 }

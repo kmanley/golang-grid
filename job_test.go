@@ -11,7 +11,7 @@ func assertJobState(t *testing.T, job *Job, state int) {
 }
 
 func TestJobStructOK(t *testing.T) {
-	job := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, nil)
+	job, _ := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, nil)
 	assertJobState(t, job, JOB_WAITING)
 	w1 := NewWorker("worker1")
 	w2 := NewWorker("worker2")
@@ -28,7 +28,7 @@ func TestJobStructOK(t *testing.T) {
 }
 
 func TestJobStructLastErr(t *testing.T) {
-	job := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, nil)
+	job, _ := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, nil)
 	assertJobState(t, job, JOB_WAITING)
 	w1 := NewWorker("worker1")
 	w2 := NewWorker("worker2")
@@ -45,7 +45,7 @@ func TestJobStructLastErr(t *testing.T) {
 }
 
 func TestJobStructFirstErrNoContinue(t *testing.T) {
-	job := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, nil)
+	job, _ := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, nil)
 	assertJobState(t, job, JOB_WAITING)
 	w1 := NewWorker("worker1")
 	w2 := NewWorker("worker2")
@@ -63,7 +63,7 @@ func TestJobStructFirstErrNoContinue(t *testing.T) {
 
 func TestJobStructFirstErrContinue(t *testing.T) {
 	ctrl := JobControl{ContinueJobOnTaskError: true}
-	job := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, &ctrl)
+	job, _ := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2}, nil, &ctrl)
 	assertJobState(t, job, JOB_WAITING)
 	w1 := NewWorker("worker1")
 	w2 := NewWorker("worker2")
@@ -80,7 +80,7 @@ func TestJobStructFirstErrContinue(t *testing.T) {
 }
 
 func TestJobStructShortestRunningTask(t *testing.T) {
-	job := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2, 3}, nil, nil)
+	job, _ := NewJob("123", "foobar.exe", "test job", []interface{}{1, 2, 3}, nil, nil)
 	w1 := NewWorker("worker1")
 	w2 := NewWorker("worker2")
 	w3 := NewWorker("worker3")

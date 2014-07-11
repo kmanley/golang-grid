@@ -35,7 +35,6 @@ import (
 	"container/heap"
 	"fmt"
 	"math/rand"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -111,12 +110,6 @@ func loadJobFromDB(jobID JobID) (job *Job, err error) {
 }
 
 func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
-	// TODO: handle AssignSingleTaskPerWorker
-	jobDef.Ctrl.CompiledWorkerNameRegex, err = regexp.Compile(jobDef.Ctrl.WorkerNameRegex)
-	if err != nil {
-		return "", err // TODO: wrap error
-	}
-
 	jobID = jobDef.ID
 	if jobID == "" {
 		jobID = newJobID()
@@ -127,8 +120,11 @@ func CreateJob(jobDef *JobDefinition) (jobID JobID, err error) {
 	// TODO: make sure jobID isn't already in jobMap; this can happen if user specifies their
 	// own jobid and would cause chaos
 
-	newJob := NewJob(jobID, jobDef.Cmd, jobDef.Description, (jobDef.Data).([]interface{}),
+	newJob, err := NewJob(jobID, jobDef.Cmd, jobDef.Description, (jobDef.Data).([]interface{}),
 		jobDef.Ctx, jobDef.Ctrl)
+	if err != nil {
+		return "", err
+	}
 
 	Model.jobMap[jobID] = newJob
 	heap.Push(&(Model.Jobs), newJob)
@@ -375,18 +371,22 @@ func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
 		return ERR_TASK_NOT_RUNNING
 	}
 
-	if job.timedOut() {
-		// TODO: worker should call setTaskDone in response to this, with err="task timed out"
-		// this gives us a chance to capture stdout/stderr and possibly diagnose why the
-		// task timed out. We rely on the worker to honor this return code.
-		return &ErrorJobTimedOut{}
+	err = job.timedOut()
+	if err != nil {
+		// TODO: worker should call setTaskDone in response to this, with this same error.
+		// That's better than us calling setTaskDone here, since it gives us a chance to
+		// capture stdout/stderr and possibly diagnose why the task timed out. We rely on
+		// the worker to honor this return code.
+		return err
 	}
 
-	if job.taskTimedOut(task) {
-		// TODO: worker should call setTaskDone in response to this, with err="task timed out"
-		// this gives us a chance to capture stdout/stderr and possibly diagnose why the
-		// task timed out. We rely on the worker to honor this return code.
-		return &ErrorTaskTimedOut{}
+	err = job.taskTimedOut(task)
+	if err != nil {
+		// TODO: worker should call setTaskDone in response to this, with this same error.
+		// That's better than us calling setTaskDone here, since it gives us a chance to
+		// capture stdout/stderr and possibly diagnose why the task timed out. We rely on
+		// the worker to honor this return code.
+		return err
 	}
 
 	//if job.clientTimedOut()

@@ -23,9 +23,9 @@ type JobControl struct {
 	// TODO: later
 	//AssignSingleTaskPerWorker bool
 	//TaskWorkerAssignment      map[string][]uint32
-	JobPriority          int8   // higher value means higher priority
-	JobTimeout           uint32 // seconds
-	TaskTimeout          uint32 // seconds
+	JobPriority          int8    // higher value means higher priority
+	JobTimeout           float64 // seconds
+	TaskTimeout          float64 // seconds
 	TaskSeemsHungTimeout uint32
 	AbandonedJobTimeout  uint32
 	MaxTaskReallocations uint8
@@ -87,13 +87,22 @@ type Job struct {
 type JobMap map[JobID]*Job
 
 func NewJob(jobID JobID, cmd string, description string, data []interface{}, ctx *Context,
-	ctrl *JobControl) *Job {
+	ctrl *JobControl) (*Job, error) {
 	now := time.Now()
 	if ctx == nil {
 		ctx = &Context{}
 	}
 	if ctrl == nil {
 		ctrl = &JobControl{}
+	}
+	// TODO: handle AssignSingleTaskPerWorker
+	if ctrl.WorkerNameRegex != "" {
+		r, err := regexp.Compile(ctrl.WorkerNameRegex)
+		if r == nil {
+			ctrl.CompiledWorkerNameRegex = r
+		} else {
+			return nil, err // TODO: handle error properly
+		}
 	}
 
 	newJob := &Job{ID: jobID, Cmd: cmd, Description: description, Ctx: *ctx,
@@ -105,7 +114,7 @@ func NewJob(jobID JobID, cmd string, description string, data []interface{}, ctx
 	for i, taskData := range data {
 		heap.Push(&(newJob.IdleTasks), NewTask(jobID, i, taskData))
 	}
-	return newJob
+	return newJob, nil
 }
 
 func (this *Job) allocateTask(worker *Worker) *Task {
@@ -314,22 +323,28 @@ func (this *Job) getFailureReason() string {
 	}
 }
 
-func (this *Job) timedOut() bool {
-	if this.Ctrl.JobTimeout == 0 {
-		return false
+func (this *Job) timedOut() error {
+	timeout := this.Ctrl.JobTimeout
+	if timeout == 0 || !this.isWorking() {
+		return nil
 	}
-	// TODO: has job started? blah blah
-	return true
+	// NOTE: this could be improved for the case where a job is suspended/resumed.
+	// Currently the time spent suspended counts toward the timeout.
+	elapsed := time.Since(this.Started).Seconds()
+	if elapsed > timeout {
+		return &ErrorJobTimedOut{Timeout: timeout, Elapsed: elapsed}
+	}
+	return nil
 }
 
-func (this *Job) taskTimedOut(task *Task) bool {
-	// TODO: use task.elapsedRunning instead
-	if task.Started.IsZero() || this.Ctrl.TaskTimeout == 0 {
-		// task hasn't started, or job has no task timeout
-		return false
+func (this *Job) taskTimedOut(task *Task) error {
+	timeout := this.Ctrl.TaskTimeout
+	if timeout == 0 {
+		return nil
 	}
-	if time.Since(task.Started) > (time.Duration(this.Ctrl.TaskTimeout) * time.Second) {
-		return true
+	elapsed := task.elapsedRunning(time.Now()).Seconds()
+	if elapsed > timeout {
+		return &ErrorTaskTimedOut{Timeout: timeout, Elapsed: elapsed}
 	}
-	return false
+	return nil
 }

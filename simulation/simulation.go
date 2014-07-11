@@ -85,16 +85,23 @@ START:
 			time.Sleep(3 * time.Second)
 			continue
 		}
-		fmt.Println(name, "got task", wtask.Job, wtask.Seq)
+		fmt.Println(name, "got task", wtask.Job, wtask.Seq, "data:", wtask.Data)
 
 		// simulate the task taking some time to compute, during which
 		// time we occasionally check status
 		for i := 0; i < 3; i++ {
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(600 * time.Millisecond)
 			err := grid.CheckJobStatus(name, wtask.Job, wtask.Seq)
 			if err != nil {
 				fmt.Println(name, "working on", wtask.Job, wtask.Seq, "got check status error", err)
-				goto START
+				switch err.(type) {
+				case *grid.ErrorTaskTimedOut, *grid.ErrorJobTimedOut:
+					fmt.Println(name, "setting task", wtask.Job, wtask.Seq, "done", nil, err)
+					grid.SetTaskDone(name, wtask.Job, wtask.Seq, nil, "stdout data", "stderr data", err)
+					goto START
+				default:
+					goto START
+				}
 			}
 		}
 
@@ -107,6 +114,17 @@ START:
 				res = interface{}(nil)
 				stderr = "stderr data"
 				err = errors.New("task failed!")
+			} else {
+				res = wtask.Data.(int) * 5
+				stderr = "stderr data"
+				err = error(nil)
+			}
+		case "tasksleep1":
+			res = wtask.Data.(int) * 3
+			stderr = "stderr data"
+			err = error(nil)
+			if name == "worker1" {
+				time.Sleep(3 * time.Second)
 			}
 		default:
 			// by default, multiply by 10
@@ -120,7 +138,7 @@ START:
 		} else {
 			serr = "(" + err.Error() + ")"
 		}
-		fmt.Println(name, "setting task", wtask.Job, wtask.Seq, "done", serr)
+		fmt.Println(name, "setting task", wtask.Job, wtask.Seq, "done", res, serr)
 		grid.SetTaskDone(name, wtask.Job, wtask.Seq, res, "stdout data", stderr, err)
 	}
 }
@@ -242,6 +260,20 @@ func testJobWithTaskErrorNoContinue() {
 	simulate(5, []grid.JobID{job1})
 }
 
+func testJobWithTimeout() {
+	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "tasksleep1", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
+		Description: "", Ctx: &grid.Context{"foo": "bar"},
+		Ctrl: &grid.JobControl{JobTimeout: 2}})
+	simulate(5, []grid.JobID{job1})
+}
+
+func testJobWithTaskTimeout() {
+	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "tasksleep1", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
+		Description: "", Ctx: &grid.Context{"foo": "bar"},
+		Ctrl: &grid.JobControl{TaskTimeout: 3}})
+	simulate(5, []grid.JobID{job1})
+}
+
 func main() {
 	numcpu := runtime.NumCPU()
 	fmt.Println("setting GOMAXPROCS to", numcpu)
@@ -266,7 +298,9 @@ func main() {
 	//testJobFutureStartTime()
 	//testJobWithWorkerNameRegex()
 	//testJobWithTaskErrorContinue()
-	testJobWithTaskErrorNoContinue()
+	//testJobWithTaskErrorNoContinue()
+	testJobWithTimeout()
+	//testJobWithTaskTimeout()
 
 	wg.Wait()
 }
