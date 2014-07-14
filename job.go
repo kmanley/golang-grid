@@ -108,7 +108,7 @@ func NewJob(jobID JobID, cmd string, description string, data []interface{}, ctx
 	newJob := &Job{ID: jobID, Cmd: cmd, Description: description, Ctx: *ctx,
 		Ctrl: *ctrl, Created: now}
 
-	newJob.NumTasks = len(data)
+	newJob.NumTasks = len(data) // TODO: if <= 0, return error and don't push job on heap
 	newJob.RunningTasks = make(TaskMap)
 	newJob.CompletedTasks = make(TaskMap)
 	for i, taskData := range data {
@@ -347,4 +347,12 @@ func (this *Job) taskTimedOut(task *Task) error {
 		return &ErrorTaskTimedOut{Timeout: timeout, Elapsed: elapsed}
 	}
 	return nil
+}
+
+func (this *Job) percentComplete() float32 {
+	if this.isWorking() {
+		return float32(len(this.CompletedTasks)) / float32(this.NumTasks) * 100.0
+	} else {
+		return 100.0
+	}
 }

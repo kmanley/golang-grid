@@ -21,11 +21,13 @@ import (
 )
 
 var wg sync.WaitGroup
-var quit = make(chan bool)
+var distquit = make(chan bool)
+var workerquit = make(chan bool)
 var newjob = make(chan grid.JobID)
 
 func simulate(numWorkers int, jobIDs []grid.JobID) {
 	runWorkers(numWorkers)
+	runDistributor()
 	fmt.Println("client:start")
 
 	jobMap := make(map[grid.JobID]bool)
@@ -63,9 +65,32 @@ func simulate(numWorkers int, jobIDs []grid.JobID) {
 		time.Sleep(1 * time.Second)
 	}
 	fmt.Println("client end")
-	for i := 0; i < numWorkers; i++ {
-		quit <- true
+	// make distributor quit; it will take down the workers
+	distquit <- true
+	wg.Wait()
+}
+
+func distributor() {
+	fmt.Println("distributor start")
+	defer wg.Done()
+	defer fmt.Println("distributor end")
+	grid.Model.HUNG_WORKER_TIMEOUT = 5 * time.Second
+	for {
+		select {
+		case <-distquit:
+			goto END
+		default:
+			grid.ReallocateHungTasks()
+			time.Sleep(2 * time.Second)
+		}
 	}
+END:
+	// send a quit signal to all known live workers; this is necessary
+	// because some tests simulate a worker crashing
+	for i := 0; i < len(grid.Model.Workers); i++ {
+		workerquit <- true
+	}
+
 }
 
 func worker(name string) {
@@ -75,7 +100,7 @@ func worker(name string) {
 START:
 	for {
 		select {
-		case <-quit:
+		case <-workerquit:
 			return
 		default:
 		}
@@ -89,8 +114,14 @@ START:
 
 		// simulate the task taking some time to compute, during which
 		// time we occasionally check status
-		for i := 0; i < 3; i++ {
-			time.Sleep(600 * time.Millisecond)
+		for i := 0; i < 5; i++ {
+			// make worker1 take longer than the others; this is to help simulate
+			// timeouts for the timeout tests
+			if name == "worker1" {
+				time.Sleep(500 * time.Millisecond)
+			} else {
+				time.Sleep(100 * time.Millisecond)
+			}
 			err := grid.CheckJobStatus(name, wtask.Job, wtask.Seq)
 			if err != nil {
 				fmt.Println(name, "working on", wtask.Job, wtask.Seq, "got check status error", err)
@@ -124,7 +155,15 @@ START:
 			stderr = "stderr data"
 			err = error(nil)
 			if name == "worker1" {
-				time.Sleep(3 * time.Second)
+				time.Sleep(5 * time.Second)
+			}
+		case "testhang":
+			res = wtask.Data.(int) * -1
+			stderr = "stderr data"
+			err = error(nil)
+			if name == "worker1" {
+				fmt.Println(name, "crashing!")
+				return
 			}
 		default:
 			// by default, multiply by 10
@@ -148,6 +187,11 @@ func runWorkers(count int) {
 		wg.Add(1)
 		go worker(fmt.Sprintf("worker%d", i))
 	}
+}
+
+func runDistributor() {
+	wg.Add(1)
+	go distributor()
 }
 
 func testBasic() {
@@ -263,14 +307,22 @@ func testJobWithTaskErrorNoContinue() {
 func testJobWithTimeout() {
 	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "tasksleep1", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
 		Description: "", Ctx: &grid.Context{"foo": "bar"},
-		Ctrl: &grid.JobControl{JobTimeout: 2}})
+		Ctrl: &grid.JobControl{JobTimeout: 1.5}})
 	simulate(5, []grid.JobID{job1})
 }
 
 func testJobWithTaskTimeout() {
 	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "tasksleep1", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
 		Description: "", Ctx: &grid.Context{"foo": "bar"},
-		Ctrl: &grid.JobControl{TaskTimeout: 3}})
+		Ctrl: &grid.JobControl{TaskTimeout: 1.5}})
+	simulate(5, []grid.JobID{job1})
+}
+
+func testHungWorker() {
+	grid.Model.HUNG_WORKER_TIMEOUT = 10 * time.Millisecond
+	job1, _ := grid.CreateJob(&grid.JobDefinition{ID: "job1", Cmd: "testhang", Data: []interface{}{1, 2, 3, 4, 5, 6, 7, 8},
+		Description: "", Ctx: &grid.Context{"foo": "bar"},
+		Ctrl: &grid.JobControl{}})
 	simulate(5, []grid.JobID{job1})
 }
 
@@ -299,8 +351,7 @@ func main() {
 	//testJobWithWorkerNameRegex()
 	//testJobWithTaskErrorContinue()
 	//testJobWithTaskErrorNoContinue()
-	testJobWithTimeout()
-	//testJobWithTaskTimeout()
-
-	wg.Wait()
+	//testJobWithTimeout()
+	testJobWithTaskTimeout()
+	//testHungWorker()
 }

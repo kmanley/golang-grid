@@ -1,4 +1,7 @@
 /*
+TODO: look into using RLock/RWLock instead of mutex in all cases, this will
+allow multiple readers/single writer.
+
 jobs are in memory from time they are created until job.IsInFinalState()
 jobs that are in final state are purged from in-memory store after X minutes
 getJob(memOnly=False) will transparently pull a job that is on disk (not in mem) into mem
@@ -34,6 +37,7 @@ package grid
 import (
 	"container/heap"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"sync"
@@ -41,11 +45,14 @@ import (
 )
 
 type model struct {
-	Mutex   sync.Mutex
-	Fifo    bool
-	Jobs    JobHeap
-	jobMap  JobMap
-	Workers WorkerMap
+	Mutex               sync.Mutex
+	Fifo                bool
+	Jobs                JobHeap
+	jobMap              JobMap
+	Workers             WorkerMap
+	prng                *rand.Rand
+	lastJobID           JobID
+	HUNG_WORKER_TIMEOUT time.Duration
 }
 
 // this is only here to support unit tests
@@ -55,17 +62,18 @@ func resetModel() {
 	Model.jobMap = make(JobMap)
 	Model.Jobs = Model.Jobs[0:0]
 	Model.Workers = make(WorkerMap)
+	Model.prng = rand.New(rand.NewSource(time.Now().Unix()))
+	Model.lastJobID = ""
+	Model.HUNG_WORKER_TIMEOUT = 30 * time.Second
 }
 
 func init() {
 	resetModel()
 }
 
-var Model = &model{} // TODO: lowercase
-var prng = rand.New(rand.NewSource(time.Now().Unix()))
-var lastJobID JobID
-
 const JOBID_FORMAT = "060102150405.999999"
+
+var Model = &model{} // TODO: lowercase
 
 // TODO: replace with guid? add distributor ID prefix? add random suffix?
 // the problem with the existing
@@ -81,13 +89,13 @@ func newJobID() (newID JobID) {
 		// this is a safeguard when creating jobs quickly in a loop, to ensure IDs are
 		// still unique even if clock resolution is too low to always provide a unique
 		// value for the format string
-		if newID != lastJobID {
+		if newID != Model.lastJobID {
 			break
 		} else {
 			fmt.Println("*** paused creating new job ID; clock resolution lower than expected") // TODO: log warning
 		}
 	}
-	lastJobID = newID
+	Model.lastJobID = newID
 	return newID
 }
 
@@ -254,7 +262,7 @@ func getJobForWorker(workerName string) (job *Job) {
 	if Model.Fifo {
 		return candidates[0]
 	} else {
-		return candidates[prng.Intn(len(candidates))]
+		return candidates[Model.prng.Intn(len(candidates))]
 	}
 }
 
@@ -265,7 +273,7 @@ func getOrCreateWorker(workerName string) *Worker {
 		worker = NewWorker(workerName)
 		Model.Workers[workerName] = worker
 	}
-	// getOrCreateWorker is only called in functions that
+	// NOTE: getOrCreateWorker is only called in functions that
 	// are called by workers, so we update the worker's
 	// last contact time in this central place
 	worker.updateLastContact()
@@ -282,6 +290,7 @@ func reallocateWorkerTask(worker *Worker) {
 	if err != nil {
 		return // TODO: log
 	}
+	fmt.Println(fmt.Sprintf("reallocating %s task %s %d", worker, worker.CurrJob, worker.CurrTask)) // TODO: proper logging
 	job.reallocateWorkerTask(worker)
 }
 
@@ -431,7 +440,7 @@ func GetJobResult(jobID JobID) ([]interface{}, error) {
 	state := job.State()
 	switch state {
 	case JOB_WAITING, JOB_RUNNING, JOB_SUSPENDED:
-		return nil, &JobNotFinished{State: state}
+		return nil, &JobNotFinished{State: state, PctComplete: job.percentComplete()}
 	case JOB_CANCELLED, JOB_DONE_ERR:
 		// TODO: support GetJobErrors() for the error case
 		return nil, &ErrorJobFailed{State: state, Reason: job.getFailureReason()}
@@ -441,10 +450,27 @@ func GetJobResult(jobID JobID) ([]interface{}, error) {
 	}
 }
 
-func Sweep() {
+// TODO: caller must hold mutex
+func getHungWorkers() []*Worker {
+	ret := make([]*Worker, 0, int(math.Max(1.0, float64(len(Model.Workers)/10))))
+	for _, worker := range Model.Workers {
+		if worker.elapsedSinceLastContact() > Model.HUNG_WORKER_TIMEOUT {
+			ret = append(ret, worker)
+		}
+	}
+	return ret
+}
+
+func ReallocateHungTasks() {
 	Model.Mutex.Lock()
 	defer Model.Mutex.Unlock()
-
+	hungWorkers := getHungWorkers()
+	for i := range hungWorkers {
+		hungWorker := hungWorkers[i]
+		fmt.Println("hung worker", hungWorker) // TODO: proper logging
+		reallocateWorkerTask(hungWorker)
+		forgetWorker(hungWorker.Name)
+	}
 }
 
 func PrintStats() {

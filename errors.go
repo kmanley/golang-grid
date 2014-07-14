@@ -22,11 +22,13 @@ func (this *ErrorWrongJobState) Error() string {
 }
 
 type JobNotFinished struct {
-	State int
+	State       int
+	PctComplete float32
 }
 
 func (this *JobNotFinished) Error() string {
-	return fmt.Sprintf("job is not finished (state %s)", JOB_STATES[this.State])
+	return fmt.Sprintf("job is not finished (state %s, %.2f%% complete)",
+		JOB_STATES[this.State], this.PctComplete)
 }
 
 type ErrorJobFailed struct {
@@ -53,5 +55,5 @@ type ErrorTaskTimedOut struct {
 }
 
 func (this *ErrorTaskTimedOut) Error() string {
-	return fmt.Sprintf("job timed out after %.1f secs (actual=%.1f secs)", this.Timeout, this.Elapsed)
+	return fmt.Sprintf("task timed out after %.1f secs (actual=%.1f secs)", this.Timeout, this.Elapsed)
 }

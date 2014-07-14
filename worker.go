@@ -31,14 +31,14 @@ type Worker struct {
 	LastContact time.Time
 }
 
-func (this *Worker) isWorking() bool {
-	return len(this.CurrJob) > 0
-}
-
 type WorkerMap map[string]*Worker
 
 func NewWorker(name string) *Worker {
 	return &Worker{Name: name}
+}
+
+func (this *Worker) String() string {
+	return this.Name
 }
 
 func (this *Worker) assignTask(task *Task) {
@@ -54,6 +54,14 @@ func (this *Worker) reset() {
 	//this.updateLastContact()
 }
 
+func (this *Worker) isWorking() bool {
+	return len(this.CurrJob) > 0
+}
+
 func (this *Worker) updateLastContact() {
 	this.LastContact = time.Now()
+}
+
+func (this *Worker) elapsedSinceLastContact() time.Duration {
+	return time.Since(this.LastContact)
 }
