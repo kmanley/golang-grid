@@ -53,6 +53,7 @@ type model struct {
 	prng                *rand.Rand
 	lastJobID           JobID
 	HUNG_WORKER_TIMEOUT time.Duration
+	ShutdownFlag        chan bool
 }
 
 // this is only here to support unit tests
@@ -65,6 +66,7 @@ func resetModel() {
 	Model.prng = rand.New(rand.NewSource(time.Now().Unix()))
 	Model.lastJobID = ""
 	Model.HUNG_WORKER_TIMEOUT = 30 * time.Second
+	Model.ShutdownFlag = make(chan bool)
 }
 
 func init() {
